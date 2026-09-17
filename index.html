@@ -3995,7 +3995,7 @@
             scrolling="no" frameborder="0" allowfullscreen="true"
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
-            referrerpolicy="no-referrer"></iframe>
+            referrerpolicy="strict-origin-when-cross-origin"></iframe>
           <div id="app-hub-player-hint">点上方 YouTube / Pornhub 打开全屏流</div>
         </div>
       </div>
@@ -12767,20 +12767,35 @@
         if (player) player.classList.remove("has-media");
       }
 
-      function setAppHubEmbed(url) {
+      function setAppHubEmbed(url, opts) {
+        opts = opts || {};
         const frame = document.getElementById("app-hub-embed");
         const player = document.getElementById("app-hub-player");
         if (!frame) return;
         try { frame.src = "about:blank"; } catch (_) {}
+        const isYt = /youtube(?:-nocookie)?\.com\/embed/i.test(String(url || "")) || opts.platform === "youtube";
         try {
           frame.setAttribute("scrolling", "no");
           frame.setAttribute("frameborder", "0");
           frame.setAttribute("allowfullscreen", "true");
           frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-forms allow-presentation");
-          frame.setAttribute("referrerpolicy", "no-referrer");
+          /* YouTube 153：必须 strict-origin-when-cross-origin；成人源保持 no-referrer */
+          frame.setAttribute("referrerpolicy", isYt ? "strict-origin-when-cross-origin" : "no-referrer");
         } catch (_) {}
         frame.src = url;
         if (player) player.classList.add("has-media");
+      }
+
+      function buildYoutubeEmbedUrl(videoId) {
+        var id = String(videoId || "").trim();
+        var currentOrigin = "http://127.0.0.1";
+        try {
+          if (window.location && window.location.origin && window.location.origin !== "null") {
+            currentOrigin = window.location.origin;
+          }
+        } catch (_) {}
+        return "https://www.youtube-nocookie.com/embed/" + encodeURIComponent(id) +
+          "?autoplay=1&playsinline=1&enablejsapi=1&rel=0&origin=" + encodeURIComponent(currentOrigin);
       }
 
       /** 📱 唯一职责：开关媒体中心。严禁 Scheme / location / open */
@@ -12966,7 +12981,7 @@
           }
           var ytIds = ["aqz-KE-bpKQ", "YE7VzlLtp-4", "LXb3EKWsInQ", "ScMzIvxBSi4", "jNQXAC9IVRw"];
           var ytId = ytIds[Math.floor(Math.random() * ytIds.length)];
-          setAppHubEmbed("https://www.youtube-nocookie.com/embed/" + ytId + "?autoplay=1&rel=0");
+          setAppHubEmbed(buildYoutubeEmbedUrl(ytId), { platform: "youtube" });
           try { showToast("YouTube Shorts", 1000); } catch (_) {}
           return;
         }

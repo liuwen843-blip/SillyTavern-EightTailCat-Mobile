@@ -151,9 +151,16 @@ function svEnsureNoReferrerMeta() {
 }
 
 function svYoutubeEmbedUrl(videoId) {
-  return 'https://www.youtube-nocookie.com/embed/' +
-    encodeURIComponent(String(videoId || '').trim()) +
-    '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
+  const id = encodeURIComponent(String(videoId || '').trim());
+  let currentOrigin = 'http://127.0.0.1';
+  try {
+    if (window.location && window.location.origin && window.location.origin !== 'null') {
+      currentOrigin = window.location.origin;
+    }
+  } catch (_) {}
+  return 'https://www.youtube-nocookie.com/embed/' + id +
+    '?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=' +
+    encodeURIComponent(currentOrigin);
 }
 
 function svFormatDuration(sec) {
@@ -527,7 +534,7 @@ function svBuildDom() {
     '  <iframe id="eight-tail-sv-embed" title="内嵌播放器" scrolling="no" frameborder="0" allowfullscreen="true"',
     '    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"',
     '    sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"',
-    '    referrerpolicy="no-referrer"></iframe>',
+    '    referrerpolicy="strict-origin-when-cross-origin"></iframe>',
     '  <div id="eight-tail-sv-browse" aria-label="成人片源列表">',
     '    <div id="eight-tail-sv-browse-head">',
     '      <span id="eight-tail-sv-browse-title">热门片源</span>',
@@ -693,14 +700,19 @@ function svPauseNativeVideo() {
   els.video.style.display = 'none';
 }
 
-function svConfigureEmbedEl(embed) {
+function svConfigureEmbedEl(embed, platform) {
   if (!embed) return;
   embed.setAttribute('scrolling', 'no');
   embed.setAttribute('frameborder', '0');
   embed.setAttribute('allowfullscreen', 'true');
   embed.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
   embed.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-presentation');
-  embed.setAttribute('referrerpolicy', 'no-referrer');
+  /* YouTube 错误 153：必须保留跨域 Referrer，不能用 no-referrer */
+  if (platform === 'youtube') {
+    embed.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+  } else {
+    embed.setAttribute('referrerpolicy', 'no-referrer');
+  }
   embed.style.width = '100%';
   embed.style.height = '100%';
   embed.style.border = 'none';
@@ -720,7 +732,7 @@ function svSetEmbedSrc(url, platform, id) {
 
   root.classList.remove('mode-youtube', 'mode-adult', 'mode-pornhub', 'mode-bilibili');
   root.classList.add('mode-embed', 'mode-' + (platform === 'adult' ? 'adult' : platform));
-  svConfigureEmbedEl(els.embed);
+  svConfigureEmbedEl(els.embed, platform);
   els.embed.style.display = 'block';
   els.embed.title = platform === 'youtube' ? 'YouTube' : '内嵌播放器';
   els.embed.src = url;
