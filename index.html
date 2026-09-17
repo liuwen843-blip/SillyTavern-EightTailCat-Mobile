@@ -365,10 +365,6 @@
     html.st-extension-host #chat-panel.open *,
     html.st-extension-host .mobile-fullscreen-view,
     html.st-extension-host .mobile-fullscreen-view *,
-    html.st-extension-host #picacg-main-container.is-open,
-    html.st-extension-host #picacg-main-container.is-open *,
-    html.st-extension-host #picacg-auth-modal.is-open,
-    html.st-extension-host #picacg-auth-modal.is-open *,
     html.st-extension-host #video-app-container.is-open,
     html.st-extension-host #video-app-container.is-open *,
     #cat-wrap,
@@ -1112,7 +1108,6 @@
     /* 彻底隐藏桌宠相关原生滚动条（侧钮轻微溢出也不显示白条） */
     #stage,
     #pet,
-    #pet .picacg-top-actions,
     #chat-spark,
     #memo-btn,
     #food-btn,
@@ -1705,7 +1700,6 @@
     .app-hub-icon[data-app="short-video"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
     .app-hub-icon[data-app="youtube"] .app-emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
     .app-hub-icon[data-app="pornhub"] .app-emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
-    .app-hub-icon[data-app="picacg"] .app-emoji { background: linear-gradient(160deg, #ff8fb8, #e91e63); }
     .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
     .app-hub-icon[data-app="discord"] .app-emoji { background: linear-gradient(160deg, #7289da, #5865f2); }
     .app-hub-icon .app-name {
@@ -3954,7 +3948,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="单击：短视频 · 双击：漫画 Manga · 长按：简报" aria-label="单击短视频，双击漫画" data-hub-only="1">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="单击/双击：多媒体视频 · 长按：简报" aria-label="打开多媒体视频播放器" data-hub-only="1">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -4079,7 +4073,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击 📱 开短视频；双击 📱 开漫画；长按可生成今日简报。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击/双击 📱 打开多媒体视频；长按可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -4100,7 +4094,7 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用与媒体中心</h3>
-        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / 漫画 / 抖音小红书<br />桌宠 📱 单击短视频 · 双击漫画</p>
+        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / 抖音小红书<br />桌宠 📱 单击/双击打开多媒体视频</p>
         <div id="app-hub-grid" aria-label="应用列表">
           <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
             <span class="app-emoji" aria-hidden="true">▶</span>
@@ -4111,11 +4105,6 @@
             <span class="app-emoji" aria-hidden="true">🔥</span>
             <span class="app-name">Pornhub</span>
             <span class="app-open-hint">卡片点播</span>
-          </button>
-          <button type="button" class="app-hub-icon" data-app="picacg" data-action="open-picacg">
-            <span class="app-emoji" aria-hidden="true">📖</span>
-            <span class="app-name">漫画</span>
-            <span class="app-open-hint">MangaDex</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
             data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
@@ -4136,7 +4125,7 @@
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
             referrerpolicy="strict-origin-when-cross-origin"></iframe>
-          <div id="app-hub-player-hint">点上方 YouTube / Pornhub / 漫画 打开</div>
+          <div id="app-hub-player-hint">点上方 YouTube / Pornhub 打开</div>
         </div>
       </div>
     </div>
@@ -12978,69 +12967,11 @@
         return false;
       }
 
-      function requestOpenPicacg() {
-        try {
-          if (window.parent && window.parent !== window && typeof window.parent.hideVideoAppForPicacg === "function") {
-            window.parent.hideVideoAppForPicacg();
-          }
-        } catch (_) {}
-        try {
-          if (typeof window.hideVideoAppForPicacg === "function") {
-            window.hideVideoAppForPicacg();
-          }
-        } catch (_) {}
-        try {
-          if (window.parent && window.parent !== window && typeof window.parent.pauseMuteShortVideoPlayer === "function") {
-            window.parent.pauseMuteShortVideoPlayer();
-          }
-        } catch (_) {}
-        try {
-          if (typeof window.pauseMuteShortVideoPlayer === "function") {
-            window.pauseMuteShortVideoPlayer();
-          }
-        } catch (_) {}
-        try {
-          if (window.parent && window.parent !== window && typeof window.parent.openPicacgApp === "function") {
-            window.parent.openPicacgApp();
-            return true;
-          }
-        } catch (_) {}
-        try {
-          if (typeof window.openPicacgApp === "function") {
-            window.openPicacgApp();
-            return true;
-          }
-        } catch (_) {}
-        try {
-          if (typeof notifyStHost === "function") {
-            notifyStHost({ type: "eight-tail-open-picacg" });
-            return true;
-          }
-          if (window.parent && window.parent !== window) {
-            window.parent.postMessage({ type: "eight-tail-open-picacg" }, "*");
-            return true;
-          }
-        } catch (_) {}
-        return false;
-      }
-
       function openVideoMediaCenter() {
         try { closeNewsBriefModal(); } catch (_) {}
         const memoPanelEl = document.getElementById("memo-panel");
         if (memoPanelEl) memoPanelEl.classList.remove("open");
         toggleMediaHub();
-        markActivity();
-      }
-
-      function openPicacgMangaCenter() {
-        try { closeNewsBriefModal(); } catch (_) {}
-        const memoPanelEl = document.getElementById("memo-panel");
-        if (memoPanelEl) memoPanelEl.classList.remove("open");
-        if (requestOpenPicacg()) {
-          try { showToast("漫画 Manga", 1000); } catch (_) {}
-        } else {
-          try { showToast("漫画模块未加载，请刷新扩展", 1800); } catch (_) {}
-        }
         markActivity();
       }
 
@@ -13197,54 +13128,6 @@
             return;
           }
           try { showToast("请在酒馆全屏媒体中心打开 Pornhub", 1600); } catch (_) {}
-          return;
-        }
-
-        if (actionType === "open-picacg" || app === "picacg") {
-          function openHostPicacg() {
-            try {
-              if (window.parent && window.parent !== window && typeof window.parent.hideVideoAppForPicacg === "function") {
-                window.parent.hideVideoAppForPicacg();
-              }
-            } catch (_) {}
-            try {
-              if (typeof window.hideVideoAppForPicacg === "function") {
-                window.hideVideoAppForPicacg();
-              }
-            } catch (_) {}
-            try {
-              if (window.parent && window.parent !== window && typeof window.parent.openPicacgApp === "function") {
-                window.parent.openPicacgApp();
-                try { closeAppHubModal(); } catch (_) {}
-                return true;
-              }
-            } catch (_) {}
-            try {
-              if (typeof window.openPicacgApp === "function") {
-                window.openPicacgApp();
-                try { closeAppHubModal(); } catch (_) {}
-                return true;
-              }
-            } catch (_) {}
-            try {
-              if (typeof notifyStHost === "function") {
-                notifyStHost({ type: "eight-tail-open-picacg" });
-                try { closeAppHubModal(); } catch (_) {}
-                return true;
-              }
-              if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: "eight-tail-open-picacg" }, "*");
-                try { closeAppHubModal(); } catch (_) {}
-                return true;
-              }
-            } catch (_) {}
-            return false;
-          }
-          if (openHostPicacg()) {
-            try { showToast("漫画 Manga", 1000); } catch (_) {}
-            return;
-          }
-          try { showToast("漫画模块未加载，请刷新扩展", 1800); } catch (_) {}
           return;
         }
 
@@ -13897,22 +13780,11 @@
           phoneClickCount = 0;
         }
 
-        /** 延时单双击拦截：第一击绝不立刻弹窗 */
+        /** 单双击统一：只打开多媒体视频播放器 */
         function onPhoneShortTap() {
-          phoneClickCount += 1;
-          if (phoneClickCount === 1) {
-            phoneClickTimer = setTimeout(function () {
-              phoneClickTimer = null;
-              phoneClickCount = 0;
-              openVideoMediaCenter();
-            }, PHONE_DBLCLICK_MS);
-            return;
-          }
-          if (phoneClickCount >= 2) {
-            clearPhoneClickTimer();
-            phoneClickCount = 0;
-            openPicacgMangaCenter();
-          }
+          clearPhoneClickTimer();
+          phoneClickCount = 0;
+          openVideoMediaCenter();
         }
 
         function openMemo() {
@@ -17309,12 +17181,6 @@
           el.closest("#app-hub-modal") ||
           el.closest("#video-app-container") ||
           el.closest("#eight-tail-short-video-root") ||
-          el.closest("#picacg-main-container") ||
-          el.closest("#picacg-modal-container") ||
-          el.closest("#picacg-auth-modal") ||
-          el.closest("#picacg-auth-backdrop") ||
-          el.closest("#picacg-auth-btn") ||
-          el.closest("#eight-tail-picacg-root") ||
           el.closest("#food-btn") ||
           el.closest("#feed-tray-modal") ||
           el.closest("#game-btn") ||

@@ -6,15 +6,7 @@ import {
   toggleShortVideoPlayer,
   isShortVideoOpen,
   pauseMuteShortVideoPlayer,
-  hideVideoAppForPicacg,
-  showVideoAppAfterPicacg,
 } from './short-video.js';
-import {
-  openPicacgApp,
-  closePicacgApp,
-  togglePicacgApp,
-  isPicacgOpen,
-} from './picacg.js';
 
 /**
  * 八条猫 · 移动触屏宿主层（强制单例）
@@ -322,7 +314,6 @@ function isPetInteractiveHit(el) {
     if (el.closest('#app-hub-modal.open') || el.closest('#feed-tray-modal.open')) return true;
     if (el.closest('#memo-panel.open') || el.closest('#chat-panel.open')) return true;
     if (el.closest('.mobile-fullscreen-view')) return true;
-    if (el.closest('#picacg-main-container.is-open') || el.closest('#picacg-auth-modal.is-open')) return true;
     if (el.closest('#video-app-container.is-open') || el.closest('#eight-tail-short-video-root.is-open')) return true;
   } catch (_) {}
   return false;
@@ -549,25 +540,11 @@ function bindHostListenersOnce() {
       return;
     }
     if (
-      data.type === 'eight-tail-open-picacg' ||
-      data.type === 'eighttailcat-open-picacg'
-    ) {
-      try { hideVideoAppForPicacg(); } catch (_) {}
-      openPicacgApp();
-      return;
-    }
-    if (
-      data.type === 'eight-tail-close-picacg' ||
-      data.type === 'eighttailcat-close-picacg'
-    ) {
-      closePicacgApp();
-      try { showVideoAppAfterPicacg(); } catch (_) {}
-      return;
-    }
-    if (
       data.type === 'eight-tail-open-short-video' ||
       data.type === 'eighttailcat-open-short-video' ||
-      data.type === 'eight-tail-open-media-hub'
+      data.type === 'eight-tail-open-media-hub' ||
+      data.type === 'eight-tail-open-picacg' ||
+      data.type === 'eighttailcat-open-picacg'
     ) {
       openShortVideoPlayer();
       return;
@@ -1138,12 +1115,6 @@ try {
   window.closeShortVideoPlayer = closeShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
   window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
-  window.hideVideoAppForPicacg = hideVideoAppForPicacg;
-  window.showVideoAppAfterPicacg = showVideoAppAfterPicacg;
-  window.openPicacgApp = openPicacgApp;
-  window.closePicacgApp = closePicacgApp;
-  window.togglePicacgApp = togglePicacgApp;
-  window.isPicacgOpen = isPicacgOpen;
 } catch (_) {}
 
 jQuery(async function () {

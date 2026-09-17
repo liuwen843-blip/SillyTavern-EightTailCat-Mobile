@@ -46,6 +46,8 @@ const SV_EPORNER_API =
 const SV_PH_API =
   'https://www.pornhub.com/webmasters/search?ordering=mostviewed&period=weekly&thumbsize=large';
 
+/** Pornhub 当前页码（换一批 / 触底加载共用） */
+let phCurrentPage = 1;
 /** 三重免跨域代理 */
 const SV_CORS_PROXIES = [
   {
@@ -137,8 +139,10 @@ let svState = {
   searchOpen: false,
   ytConfigOpen: false,
   gesturesSuspended: false,
-  hiddenForPicacg: false,
   lastSearchKw: '',
+  phSearchKw: '',
+  phNoMore: false,
+  phLoadingMore: false,
 };
 
 function svIsEmbedMode(mode) {
@@ -309,11 +313,35 @@ function svClearYtApiKey() {
 function svUpdateYtSearchHint() {
   const els = svEls();
   if (!els.searchHint) return;
-  if (svGetYtApiKey()) {
-    els.searchHint.textContent = 'YouTube：官方 API 已加速 · Pornhub：卡片列表';
-  } else {
-    els.searchHint.textContent = 'YouTube：公共镜像（可配 API Key 加速）· Pornhub：卡片列表';
+  if (svState.mode === 'adult') {
+    els.searchHint.textContent = 'Pornhub：P站免密钥 · 直接搜索片源';
+    return;
   }
+  if (svGetYtApiKey()) {
+    els.searchHint.textContent = 'YouTube：官方 API 已加速';
+  } else {
+    els.searchHint.textContent = 'YouTube：公共镜像（可配 API Key 加速）';
+  }
+}
+
+function svSyncSearchUiForMode() {
+  const els = svEls();
+  if (!els.root) return;
+  const isPh = svState.mode === 'adult';
+  els.root.classList.toggle('mode-ph', isPh);
+  if (els.ytConfigToggle) {
+    els.ytConfigToggle.style.display = isPh ? 'none' : '';
+    els.ytConfigToggle.title = isPh ? 'P站免密钥' : 'YouTube 配置';
+  }
+  if (isPh && svState.ytConfigOpen) {
+    svSetYtConfigOpen(false);
+  }
+  if (els.searchInput) {
+    els.searchInput.placeholder = isPh
+      ? '搜索 Pornhub 关键词…'
+      : '搜索关键词：cat shorts / anime / asmr…';
+  }
+  svUpdateYtSearchHint();
 }
 
 function svSyncYtConfigUi(root) {
@@ -577,32 +605,41 @@ function svNormalizeAdultItems(source, data) {
   return out;
 }
 
-async function svLoadAdultCatalog(searchKw) {
-  const kw = String(searchKw || '').trim();
+async function svLoadPornhubPage(opts) {
+  opts = opts || {};
+  const kw = String(opts.kw != null ? opts.kw : (svState.phSearchKw || '')).trim();
+  const page = Math.max(1, Number(opts.page) || 1);
+  const includeEporner = opts.includeEporner !== false && page === 1 && !kw;
   const merged = [];
-  const epUrl = kw
-    ? ('https://www.eporner.com/api/v2/video/search/?query=' + encodeURIComponent(kw) +
-      '&per_page=24&page=1&order=most-popular&thumbsize=big&format=json')
-    : SV_EPORNER_API;
-  const phUrl = kw
-    ? ('https://www.pornhub.com/webmasters/search?search=' + encodeURIComponent(kw) +
-      '&ordering=mostviewed&period=weekly&thumbsize=large')
-    : SV_PH_API;
 
-  try {
-    const ep = await svFetchJsonViaProxies(epUrl);
-    merged.push.apply(merged, svNormalizeAdultItems('eporner', ep));
-  } catch (err) {
-    console.warn('[EightTailCat] Eporner fail', err);
+  let phUrl;
+  if (kw) {
+    phUrl = 'https://www.pornhub.com/webmasters/search?search=' +
+      encodeURIComponent(kw) + '&page=' + page;
+  } else {
+    phUrl = SV_PH_API + '&page=' + page;
   }
+
+  if (includeEporner) {
+    try {
+      const ep = await svFetchJsonViaProxies(SV_EPORNER_API);
+      merged.push.apply(merged, svNormalizeAdultItems('eporner', ep));
+    } catch (err) {
+      console.warn('[EightTailCat] Eporner fail', err);
+    }
+  }
+
   try {
     const ph = await svFetchJsonViaProxies(phUrl);
-    merged.push.apply(merged, svNormalizeAdultItems('pornhub', ph));
+    const phItems = svNormalizeAdultItems('pornhub', ph);
+    merged.push.apply(merged, phItems);
+    if (!phItems.length) svState.phNoMore = true;
   } catch (err) {
     console.warn('[EightTailCat] Pornhub fail', err);
+    if (!merged.length) throw err;
   }
 
-  if (!merged.length && !kw) {
+  if (!merged.length && !kw && page === 1) {
     try {
       const alt = await svFetchJsonViaProxies(
         'https://www.eporner.com/api/v2/video/search/?query=hot&per_page=12&page=1&format=json&thumbsize=big&order=most-popular'
@@ -611,6 +648,53 @@ async function svLoadAdultCatalog(searchKw) {
     } catch (_) {}
   }
   return merged;
+}
+
+/** @deprecated 兼容旧调用：默认拉第 1 页 */
+async function svLoadAdultCatalog(searchKw) {
+  return svLoadPornhubPage({ kw: searchKw, page: 1, includeEporner: true });
+}
+
+async function loadMorePornhub() {
+  if (!svState.browseOpen) return;
+  if (svState.adultLoading || svState.phLoadingMore || svState.phNoMore) return;
+  svState.phLoadingMore = true;
+  const nextPage = phCurrentPage + 1;
+  const els = svEls();
+  try {
+    if (els.browseTitle) {
+      els.browseTitle.textContent = '加载第 ' + nextPage + ' 页…';
+    }
+    const batch = await svLoadPornhubPage({
+      kw: svState.phSearchKw,
+      page: nextPage,
+      includeEporner: false,
+    });
+    if (!batch.length) {
+      svState.phNoMore = true;
+      svShowHint('没有更多了', 1200);
+      if (els.browseTitle) {
+        els.browseTitle.textContent = (svState.phSearchKw
+          ? ('搜索「' + svState.phSearchKw + '」')
+          : '热门片源') + ' · ' + svState.adultList.length + ' 部';
+      }
+      return;
+    }
+    phCurrentPage = nextPage;
+    const start = svState.adultList.length;
+    svState.adultList = svState.adultList.concat(batch);
+    svAppendAdultCards(batch, start);
+    if (els.browseTitle) {
+      els.browseTitle.textContent = (svState.phSearchKw
+        ? ('搜索「' + svState.phSearchKw + '」')
+        : '热门片源') + ' · ' + svState.adultList.length + ' 部 · p' + phCurrentPage;
+    }
+  } catch (err) {
+    console.warn(err);
+    svShowHint('加载失败', 1200);
+  } finally {
+    svState.phLoadingMore = false;
+  }
 }
 
 /* —— DOM / 样式 —— */
@@ -642,23 +726,10 @@ function svEnsureStyle() {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   user-select: none; box-sizing: border-box !important;
 }
-#video-app-container.is-open:not(.picacg-hidden),
-#eight-tail-short-video-root.is-open:not(.picacg-hidden) { display: flex !important; }
-#video-app-container.picacg-hidden,
-#eight-tail-short-video-root.picacg-hidden {
-  display: none !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-  z-index: 0 !important;
-}
+#video-app-container.is-open,
+#eight-tail-short-video-root.is-open { display: flex !important; }
 #video-app-container, #video-app-container *,
 #eight-tail-short-video-root, #eight-tail-short-video-root * { pointer-events: auto !important; box-sizing: border-box; }
-#video-app-container.picacg-hidden,
-#video-app-container.picacg-hidden *,
-#eight-tail-short-video-root.picacg-hidden,
-#eight-tail-short-video-root.picacg-hidden * {
-  pointer-events: none !important;
-}
 #eight-tail-sv-toolbar {
   position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important;
   z-index: 40 !important; display: flex !important; justify-content: flex-end !important; gap: 8px !important;
@@ -819,7 +890,6 @@ function svEnsureStyle() {
 .etc-sv-app .name { font-size: 10px; font-weight: 700; }
 .etc-sv-app[data-app="youtube"] .emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
 .etc-sv-app[data-app="pornhub"] .emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
-.etc-sv-app[data-app="picacg"] .emoji { background: linear-gradient(160deg, #ff8fb8, #e91e63); }
 .etc-sv-app[data-app="douyin"] .emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
 .etc-sv-app[data-app="xiaohongshu"] .emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
 .etc-sv-app.is-on { outline: 2px solid rgba(255,255,255,.9); }
@@ -854,6 +924,19 @@ function svEnsureStyle() {
 #eight-tail-sv-browse-refresh {
   border: 0; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700;
   background: rgba(255,255,255,.14); color: #fff; cursor: pointer;
+}
+#video-app-container.mode-ph #eight-tail-sv-yt-config-toggle,
+#eight-tail-short-video-root.mode-ph #eight-tail-sv-yt-config-toggle,
+#video-app-container.mode-ph #eight-tail-sv-yt-config,
+#eight-tail-short-video-root.mode-ph #eight-tail-sv-yt-config {
+  display: none !important;
+}
+#eight-tail-sv-ph-keyless {
+  display: none; font-size: 11px; opacity: .8; padding: 4px 2px 0;
+}
+#video-app-container.mode-ph.search-open #eight-tail-sv-ph-keyless,
+#eight-tail-short-video-root.mode-ph.search-open #eight-tail-sv-ph-keyless {
+  display: block;
 }
 #eight-tail-sv-cards {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
@@ -960,45 +1043,20 @@ function svHardStopMedia() {
   svSetSearchOpen(false);
 }
 
-/** 进入漫画：彻底隐藏视频层并注销手势 */
-export function hideVideoAppForPicacg() {
-  const root = svGetRoot();
+/** 暂停并静音（不关闭媒体中心） */
+function pauseMuteShortVideoPlayerImpl() {
   svHardStopMedia();
-  svState.gesturesSuspended = true;
-  svState.hiddenForPicacg = true;
-  if (!root) return;
-  root.classList.add('picacg-hidden');
-  root.style.setProperty('display', 'none', 'important');
-  root.style.setProperty('pointer-events', 'none', 'important');
-  root.style.setProperty('visibility', 'hidden', 'important');
-  root.style.setProperty('z-index', '0', 'important');
-}
-
-/** 退出漫画：恢复视频层（若原本开着） */
-export function showVideoAppAfterPicacg() {
-  const root = svGetRoot();
-  svState.gesturesSuspended = false;
-  svState.hiddenForPicacg = false;
-  if (!root) return;
-  root.classList.remove('picacg-hidden');
-  root.style.removeProperty('visibility');
-  if (svState.open) {
-    root.style.setProperty('display', 'flex', 'important');
-    root.style.setProperty('pointer-events', 'auto', 'important');
-    root.style.setProperty('z-index', '100002', 'important');
-    root.classList.add('is-open');
-  } else {
-    root.style.setProperty('display', 'none', 'important');
-  }
+  svUpdateChrome();
 }
 
 function svBuildDom() {
   svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '13') {
+  if (root && root.dataset.svVersion === '14') {
     svForceRootCss(root);
     svSyncYtConfigUi(root);
+    svSyncSearchUiForMode();
     return root;
   }
   if (root) {
@@ -1011,7 +1069,7 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '13';
+  root.dataset.svVersion = '14';
   root.className = 'video-app-container';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
@@ -1047,13 +1105,13 @@ function svBuildDom() {
     '      <div class="etc-sv-guide-note">未配置时将自动走免翻公共镜像，配置后秒级出画且更稳定。</div>',
     '    </div>',
     '  </div>',
+    '  <div id="eight-tail-sv-ph-keyless">P站免密钥 · 搜索词直达 Pornhub</div>',
     '  <div id="eight-tail-sv-search-tags" role="group" aria-label="快捷标签"></div>',
-    '  <div id="eight-tail-sv-search-hint">YouTube：公共镜像（可配 API Key 加速）· Pornhub：卡片列表</div>',
+    '  <div id="eight-tail-sv-search-hint">YouTube：公共镜像（可配 API Key 加速）</div>',
     '</div>',
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="pornhub"><span class="emoji">🔥</span><span class="name">Pornhub</span></button>',
-    '  <button type="button" class="etc-sv-app" data-app="picacg"><span class="emoji">📖</span><span class="name">漫画</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="douyin" data-action="external" data-scheme="snssdk1128://feed" data-web="https://www.douyin.com/"><span class="emoji">🎵</span><span class="name">抖音</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="xiaohongshu" data-action="external" data-scheme="xhsdiscover://home" data-web="https://www.xiaohongshu.com/explore"><span class="emoji">📕</span><span class="name">小红书</span></button>',
     '</div>',
@@ -1066,7 +1124,7 @@ function svBuildDom() {
     '  <div id="eight-tail-sv-browse" aria-label="成人片源列表">',
     '    <div id="eight-tail-sv-browse-head">',
     '      <span id="eight-tail-sv-browse-title">热门片源</span>',
-    '      <button type="button" id="eight-tail-sv-browse-refresh">刷新</button>',
+    '      <button type="button" id="eight-tail-sv-browse-refresh">换一批</button>',
     '    </div>',
     '    <div id="eight-tail-sv-cards"></div>',
     '  </div>',
@@ -1202,6 +1260,7 @@ function svMarkAppActive(appName) {
   for (let i = 0; i < nodes.length; i++) {
     nodes[i].classList.toggle('is-on', nodes[i].getAttribute('data-app') === appName);
   }
+  svSyncSearchUiForMode();
 }
 
 function svCurrent() {
@@ -1226,6 +1285,7 @@ function svSetSearchOpen(on) {
   if (svState.searchOpen) {
     svFillQuickTags(root);
     svSyncYtConfigUi(root);
+    svSyncSearchUiForMode();
     setTimeout(function () {
       try {
         if (els.searchInput) {
@@ -1316,7 +1376,10 @@ async function svSearchAdult(keyword) {
     return;
   }
   svRememberSearch(kw);
-  await svOpenAdultBrowse(true, kw);
+  phCurrentPage = 1;
+  svState.phSearchKw = kw;
+  svState.phNoMore = false;
+  await svOpenAdultBrowse(true, kw, { page: 1 });
   svSetSearchOpen(false);
 }
 
@@ -1330,7 +1393,10 @@ async function svRunSearch(rawKw) {
   }
   if (els.searchInput) els.searchInput.value = kw;
 
-  if (svState.mode === 'adult' || (els.root && els.root.querySelector('.etc-sv-app[data-app="pornhub"].is-on'))) {
+  /* 按当前激活 Tab 分流：Pornhub 走 P 站搜索，YouTube 走油管 API */
+  const onPhTab = svState.mode === 'adult' ||
+    !!(els.root && els.root.querySelector('.etc-sv-app[data-app="pornhub"].is-on'));
+  if (onPhTab) {
     await svSearchAdult(kw);
     return;
   }
@@ -1447,6 +1513,7 @@ function svSetEmbedSrc(url, platform, id) {
   els.embed.title = platform === 'youtube' ? 'YouTube' : '内嵌播放器';
   els.embed.src = url;
   svUpdateChrome();
+  svSyncSearchUiForMode();
   return true;
 }
 
@@ -1458,6 +1525,7 @@ function svSwitchToNativeMode() {
   const els = svEls();
   if (els.video) els.video.style.display = 'block';
   svMarkAppActive('');
+  svSyncSearchUiForMode();
   svUpdateChrome();
 }
 
@@ -1549,49 +1617,63 @@ function svNextYoutube(delta) {
 
 /* —— 成人片源：卡片列表 —— */
 
+function svBuildAdultCard(item, index) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'etc-sv-card';
+  btn.dataset.index = String(index);
+
+  const thumbWrap = document.createElement('div');
+  thumbWrap.className = 'etc-sv-card-thumb';
+  const thumbUrl = svPickThumbUrl(item) || String(item.thumb || '').trim();
+  if (thumbUrl && thumbUrl.indexOf('[object') < 0) {
+    const img = document.createElement('img');
+    svAttachNoReferrerImg(img, thumbUrl);
+    thumbWrap.appendChild(img);
+  }
+  const dur = document.createElement('span');
+  dur.className = 'etc-sv-card-dur';
+  dur.textContent = item.duration || '';
+  thumbWrap.appendChild(dur);
+
+  const body = document.createElement('div');
+  body.className = 'etc-sv-card-body';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'etc-sv-card-title';
+  titleEl.textContent = item.title || '视频';
+  const srcEl = document.createElement('div');
+  srcEl.className = 'etc-sv-card-src';
+  srcEl.textContent = (item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 点播';
+  body.appendChild(titleEl);
+  body.appendChild(srcEl);
+
+  btn.appendChild(thumbWrap);
+  btn.appendChild(body);
+  return btn;
+}
+
 function svRenderAdultCards(list) {
   svEnsureNoReferrerMeta();
   const els = svEls();
   if (!els.cards) return;
   els.cards.innerHTML = '';
   if (!list || !list.length) {
-    els.cards.innerHTML = '<div style="grid-column:1/-1;opacity:.7;padding:24px;text-align:center;font-size:13px;">暂无结果，请点刷新重试</div>';
+    els.cards.innerHTML = '<div style="grid-column:1/-1;opacity:.7;padding:24px;text-align:center;font-size:13px;">暂无结果，请点「换一批」重试</div>';
     return;
   }
   for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'etc-sv-card';
-    btn.dataset.index = String(i);
+    els.cards.appendChild(svBuildAdultCard(list[i], i));
+  }
+}
 
-    const thumbWrap = document.createElement('div');
-    thumbWrap.className = 'etc-sv-card-thumb';
-    const thumbUrl = svPickThumbUrl(item) || String(item.thumb || '').trim();
-    if (thumbUrl && thumbUrl.indexOf('[object') < 0) {
-      const img = document.createElement('img');
-      svAttachNoReferrerImg(img, thumbUrl);
-      thumbWrap.appendChild(img);
-    }
-    const dur = document.createElement('span');
-    dur.className = 'etc-sv-card-dur';
-    dur.textContent = item.duration || '';
-    thumbWrap.appendChild(dur);
-
-    const body = document.createElement('div');
-    body.className = 'etc-sv-card-body';
-    const titleEl = document.createElement('div');
-    titleEl.className = 'etc-sv-card-title';
-    titleEl.textContent = item.title || '视频';
-    const srcEl = document.createElement('div');
-    srcEl.className = 'etc-sv-card-src';
-    srcEl.textContent = (item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 点播';
-    body.appendChild(titleEl);
-    body.appendChild(srcEl);
-
-    btn.appendChild(thumbWrap);
-    btn.appendChild(body);
-    els.cards.appendChild(btn);
+function svAppendAdultCards(items, startIndex) {
+  const els = svEls();
+  if (!els.cards || !items || !items.length) return;
+  if (!els.cards.querySelector('.etc-sv-card')) {
+    els.cards.innerHTML = '';
+  }
+  for (let i = 0; i < items.length; i++) {
+    els.cards.appendChild(svBuildAdultCard(items[i], startIndex + i));
   }
 }
 
@@ -1607,41 +1689,53 @@ function svPlayAdultAt(index) {
   svSetStatus((item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 上下滑切 · 列表可返回');
 }
 
-async function svOpenAdultBrowse(forceReload, searchKw) {
+async function svOpenAdultBrowse(forceReload, searchKw, opts) {
+  opts = opts || {};
   svEnsureNoReferrerMeta();
   if (svState.adultLoading) {
     svShowHint('加载中…');
     return;
   }
-  const kw = String(searchKw != null ? searchKw : '').trim();
+  const kw = String(searchKw != null ? searchKw : (svState.phSearchKw || '')).trim();
+  const page = Math.max(1, Number(opts.page) || (forceReload ? phCurrentPage : 1));
   svMarkAppActive('pornhub');
   svSetBrowseOpen(true);
   svPauseNativeVideo();
   svClearEmbedFrame();
   svState.mode = 'adult';
   svWriteMode('adult');
+  svSyncSearchUiForMode();
 
   const els = svEls();
   const titlePrefix = kw ? ('搜索「' + kw + '」') : '热门片源';
   if (els.browseTitle) els.browseTitle.textContent = titlePrefix + '加载中…';
 
   if (!forceReload && !kw && svState.adultList.length) {
-    if (els.browseTitle) els.browseTitle.textContent = '热门片源 · ' + svState.adultList.length;
+    if (els.browseTitle) {
+      els.browseTitle.textContent = '热门片源 · ' + svState.adultList.length + ' 部 · p' + phCurrentPage;
+    }
     svRenderAdultCards(svState.adultList);
     svShowHint('选择影片');
     return;
   }
 
   svState.adultLoading = true;
+  svState.phSearchKw = kw;
   svShowHint(kw ? '搜索中…' : '代理拉取中…');
-  svSetStatus(kw ? ('搜索 · ' + kw) : '三重代理穿透 · Eporner / Pornhub');
+  svSetStatus(kw ? ('P站搜索 · ' + kw + ' · p' + page) : ('Pornhub · 第 ' + page + ' 页'));
   try {
-    const list = await svLoadAdultCatalog(kw);
+    const list = await svLoadPornhubPage({
+      kw: kw,
+      page: page,
+      includeEporner: page === 1 && !kw,
+    });
+    phCurrentPage = page;
+    if (!list.length) svState.phNoMore = true;
     svState.adultList = list;
     svState.adultIndex = 0;
     if (els.browseTitle) {
       els.browseTitle.textContent = list.length
-        ? (titlePrefix + ' · ' + list.length + ' 部')
+        ? (titlePrefix + ' · ' + list.length + ' 部 · p' + page)
         : (titlePrefix + ' · 暂无结果');
     }
     svRenderAdultCards(list);
@@ -1649,11 +1743,22 @@ async function svOpenAdultBrowse(forceReload, searchKw) {
   } catch (err) {
     console.warn(err);
     svShowHint('拉取失败');
-    if (els.browseTitle) els.browseTitle.textContent = '拉取失败，请刷新';
+    if (els.browseTitle) els.browseTitle.textContent = '拉取失败，请换一批';
     svRenderAdultCards([]);
   } finally {
     svState.adultLoading = false;
   }
+}
+
+/** 换一批：页码 +1，清空列表加载下一组 */
+async function svRefreshPornhubBatch() {
+  if (svState.adultLoading || svState.phLoadingMore) {
+    svShowHint('加载中…');
+    return;
+  }
+  phCurrentPage += 1;
+  svState.phNoMore = false;
+  await svOpenAdultBrowse(true, svState.phSearchKw, { page: phCurrentPage });
 }
 
 /* —— 外链 —— */
@@ -1715,27 +1820,11 @@ function svOnAppDockClick(btn) {
     return;
   }
   if (app === 'pornhub') {
-    svOpenAdultBrowse(true);
+    phCurrentPage = 1;
+    svState.phSearchKw = '';
+    svState.phNoMore = false;
+    svOpenAdultBrowse(true, '', { page: 1 });
     return;
-  }
-  if (app === 'picacg') {
-    try {
-      if (typeof window.hideVideoAppForPicacg === 'function') {
-        window.hideVideoAppForPicacg();
-      } else if (typeof window.pauseMuteShortVideoPlayer === 'function') {
-        window.pauseMuteShortVideoPlayer();
-      }
-    } catch (_) {}
-    try {
-      if (typeof window.openPicacgApp === 'function') {
-        window.openPicacgApp();
-        return;
-      }
-    } catch (_) {}
-    try {
-      window.postMessage({ type: 'eight-tail-open-picacg' }, '*');
-    } catch (_) {}
-    svShowHint('正在打开漫画…', 1200);
   }
 }
 
@@ -1816,30 +1905,13 @@ function svToggleLike() {
   svUpdateChrome();
 }
 
-function svIsPicacgTarget(el) {
-  if (!el || !el.closest) return false;
-  return !!(
-    el.closest('#picacg-main-container') ||
-    el.closest('#picacg-modal-container') ||
-    el.closest('#eight-tail-picacg-root') ||
-    el.closest('.picacg-modal-container')
-  );
-}
-
 function svGesturesBlocked(el) {
-  if (svState.gesturesSuspended || svState.hiddenForPicacg) return true;
-  if (svIsPicacgTarget(el)) return true;
-  try {
-    const pica = document.getElementById('picacg-main-container') ||
-      document.getElementById('picacg-modal-container');
-    if (pica && (pica.classList.contains('is-open') || pica.style.display === 'flex')) return true;
-  } catch (_) {}
+  if (svState.gesturesSuspended) return true;
   return false;
 }
 
 function svIsInteractiveTarget(el) {
   if (!el || !el.closest) return false;
-  if (svIsPicacgTarget(el)) return true;
   return !!(
     el.closest('#eight-tail-sv-toolbar') ||
     el.closest('#eight-tail-sv-apps') ||
@@ -1883,6 +1955,10 @@ function svBindUi(root) {
     els.ytConfigToggle.addEventListener('click', function (e) {
       e.preventDefault();
       stopBubble(e);
+      if (svState.mode === 'adult') {
+        svShowHint('P站免密钥', 1200);
+        return;
+      }
       if (!svState.searchOpen) {
         svSetSearchOpen(true);
         svSetYtConfigOpen(true);
@@ -2013,8 +2089,17 @@ function svBindUi(root) {
     els.browseRefresh.addEventListener('click', function (e) {
       e.preventDefault();
       stopBubble(e);
-      svOpenAdultBrowse(true, svState.lastSearchKw || '');
+      svRefreshPornhubBatch();
     });
+  }
+  if (els.browse) {
+    els.browse.addEventListener('scroll', function () {
+      if (!svState.browseOpen) return;
+      const el = els.browse;
+      if (el.scrollHeight - el.scrollTop <= el.clientHeight + 50) {
+        loadMorePornhub();
+      }
+    }, { passive: true });
   }
   if (els.cards) {
     els.cards.addEventListener('click', function (e) {
@@ -2116,21 +2201,12 @@ export async function openShortVideoPlayer() {
     localStorage.removeItem('eight_tail_short_video_bvid');
   } catch (_) {}
 
-  /* 若漫画开着，先关掉（互斥） */
-  try {
-    if (typeof window.closePicacgApp === 'function' && typeof window.isPicacgOpen === 'function' && window.isPicacgOpen()) {
-      window.closePicacgApp();
-    }
-  } catch (_) {}
-
   const root = svBuildDom();
   try {
     if (root.parentElement !== document.body) document.body.appendChild(root);
   } catch (_) {}
 
   svState.gesturesSuspended = false;
-  svState.hiddenForPicacg = false;
-  root.classList.remove('picacg-hidden');
   svForceRootCss(root);
   svState.muted = true;
   svArmClickGuard();
@@ -2143,6 +2219,7 @@ export async function openShortVideoPlayer() {
   root.style.setProperty('visibility', 'visible', 'important');
   root.style.setProperty('z-index', '100002', 'important');
   svState.open = true;
+  svSyncSearchUiForMode();
 
   setTimeout(function () {
     svForceRootCss(root);
@@ -2151,6 +2228,7 @@ export async function openShortVideoPlayer() {
       return;
     }
     if (savedMode === 'adult' || savedMode === 'pornhub') {
+      phCurrentPage = phCurrentPage || 1;
       svOpenAdultBrowse(false);
       return;
     }
@@ -2182,19 +2260,17 @@ export function closeShortVideoPlayer() {
   svState.open = false;
 }
 
-/** 打开漫画时：暂停并静音，不关闭媒体中心 */
 export function pauseMuteShortVideoPlayer() {
-  svHardStopMedia();
-  svUpdateChrome();
+  pauseMuteShortVideoPlayerImpl();
 }
 
 export function toggleShortVideoPlayer() {
-  if (svState.open && !svState.hiddenForPicacg) closeShortVideoPlayer();
+  if (svState.open) closeShortVideoPlayer();
   else openShortVideoPlayer();
 }
 
 export function isShortVideoOpen() {
-  return !!svState.open && !svState.hiddenForPicacg;
+  return !!svState.open;
 }
 
 try {
@@ -2203,8 +2279,12 @@ try {
   window.toggleShortVideoPlayer = toggleShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
   window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
-  window.hideVideoAppForPicacg = hideVideoAppForPicacg;
-  window.showVideoAppAfterPicacg = showVideoAppAfterPicacg;
   window.__etcPlayYoutube = svOpenYoutubeFeed;
-  window.__etcPlayPornhub = function () { svOpenAdultBrowse(true); };
+  window.__etcPlayPornhub = function () {
+    phCurrentPage = 1;
+    svState.phSearchKw = '';
+    svState.phNoMore = false;
+    svOpenAdultBrowse(true, '', { page: 1 });
+  };
+  window.__etcLoadMorePornhub = loadMorePornhub;
 } catch (_) {}
