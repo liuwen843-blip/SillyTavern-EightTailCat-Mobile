@@ -1,23 +1,44 @@
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced, event_types, eventSource } from '../../../../script.js';
+import {
+  openShortVideoPlayer,
+  closeShortVideoPlayer,
+  isShortVideoOpen,
+} from './short-video.js';
 
 /**
- * 八条猫 · 移动触屏宿主层
- * - 容器强制挂 document.body（全屏可拖、不被 overflow:hidden 裁切）
- * - 默认显示；侧边栏可一键召唤到屏幕中央
- * - 尺寸贴合猫咪，禁止 100vw/100vh 挡点击
- * - 拖拽仅响应 iframe 内手指手势 postMessage，无全局追光标
+ * 八条猫 · 移动触屏宿主层（强制单例）
+ * - 挂载前清理一切旧容器 / 悬浮球，杜绝叠猫
+ * - 统一 togglePetVisibility 控制显隐
+ * - 内嵌短视频挂 document.body，不离开酒馆页
  */
 
 const MODULE = 'EightTailCat-Pet-Mobile';
-const OVERLAY_ID = 'pet-container-mobile';
-const FRAME_ID = 'eighttailcat-frame-mobile';
+const ROOT_ID = 'eight-tail-pet-mobile-root';
+const TOGGLE_ID = 'eight-tail-mobile-toggle-btn';
+const FRAME_ID = 'eight-tail-mobile-frame';
 const SETTINGS_ID = 'eighttailcat-mobile-settings';
-const DOCK_ID = 'eighttailcat-mobile-dock';
-const FALLBACK_ID = 'eighttailcat-mobile-fallback';
-const VISIBLE_LS_KEY = 'EightTailCat-Pet-Mobile.visible';
+const FALLBACK_ID = 'eight-tail-mobile-fallback';
+const VISIBLE_LS_KEY = 'eight_tail_pet_mobile_visible';
 const DOCK_TOP_LS_KEY = 'EightTailCat-Pet-Mobile.dockTop';
 const EDGE_PAD = 10;
+
+/* 兼容旧 localStorage / 旧 DOM id */
+const LEGACY_VISIBLE_KEYS = [
+  VISIBLE_LS_KEY,
+  'EightTailCat-Pet-Mobile.visible',
+];
+const LEGACY_ROOT_IDS = [
+  ROOT_ID,
+  'pet-container-mobile',
+  'eighttailcat-pet-mobile-root',
+  'eighttailcat-mobile-root',
+];
+const LEGACY_TOGGLE_IDS = [
+  TOGGLE_ID,
+  'eighttailcat-mobile-dock',
+  'eight-tail-mobile-dock',
+];
 
 const defaultSettings = {
   visible: true,
@@ -33,16 +54,20 @@ function safeCall(fn) {
 }
 
 function readVisibleFromLocal() {
-  try {
-    const raw = localStorage.getItem(VISIBLE_LS_KEY);
-    if (raw === '0' || raw === 'false') return false;
-    if (raw === '1' || raw === 'true') return true;
-  } catch (_) {}
-  return null; /* 无值 → 默认显示 */
+  for (let i = 0; i < LEGACY_VISIBLE_KEYS.length; i++) {
+    try {
+      const raw = localStorage.getItem(LEGACY_VISIBLE_KEYS[i]);
+      if (raw === '0' || raw === 'false') return false;
+      if (raw === '1' || raw === 'true') return true;
+    } catch (_) {}
+  }
+  return null;
 }
 
 function writeVisibleToLocal(visible) {
-  try { localStorage.setItem(VISIBLE_LS_KEY, visible ? '1' : '0'); } catch (_) {}
+  const v = visible ? '1' : '0';
+  try { localStorage.setItem(VISIBLE_LS_KEY, v); } catch (_) {}
+  try { localStorage.setItem('EightTailCat-Pet-Mobile.visible', v); } catch (_) {}
 }
 
 function readDockTopFromLocal() {
@@ -67,10 +92,7 @@ function ensureSettings() {
     if (typeof s.visible !== 'boolean') {
       s.visible = fromLs == null ? true : fromLs;
     }
-    /* 首次安装：强制可见，避免历史脏数据导致「消失唤不回」 */
-    if (fromLs == null && s.visible !== true) {
-      s.visible = true;
-    }
+    if (fromLs == null && s.visible !== true) s.visible = true;
     writeVisibleToLocal(!!s.visible);
     return s;
   } catch (_) {
@@ -97,6 +119,27 @@ function getExtensionFolderName() {
   return MODULE;
 }
 
+/** 启动/挂载前：清掉所有历史幽灵猫与悬浮球 */
+function purgeGhostPets() {
+  const removeAll = function (sel) {
+    try {
+      document.querySelectorAll(sel).forEach(function (el) {
+        try { el.remove(); } catch (_) {}
+      });
+    } catch (_) {}
+  };
+
+  LEGACY_ROOT_IDS.forEach(function (id) { removeAll('#' + id); });
+  LEGACY_TOGGLE_IDS.forEach(function (id) { removeAll('#' + id); });
+  removeAll('[id^="eighttailcat-frame"]');
+  removeAll('[id^="eight-tail-mobile-frame"]');
+  removeAll('[id^="eighttailcat-mobile-fallback"]');
+  removeAll('[id^="eight-tail-mobile-fallback"]');
+  /* 兜底：带本扩展 data 标记的节点 */
+  removeAll('[data-eight-tail-mobile="root"]');
+  removeAll('[data-eight-tail-mobile="toggle"]');
+}
+
 function readOverlayPos(el) {
   const x = parseFloat(el.dataset.posX);
   const y = parseFloat(el.dataset.posY);
@@ -104,7 +147,6 @@ function readOverlayPos(el) {
   return { left: 0, top: EDGE_PAD };
 }
 
-/** 全视口边界：禁止任何局部容器 getBoundingClientRect / offsetParent */
 function clampOverlayPos(el, left, top) {
   const w = (el && el.offsetWidth) || 300;
   const h = (el && el.offsetHeight) || 400;
@@ -153,7 +195,6 @@ function scheduleOverlayPos(el, left, top) {
   });
 }
 
-/** 默认：屏幕正中偏右安全位 */
 function defaultRightCenterPos(el) {
   const w = (el && el.offsetWidth) || 300;
   const h = (el && el.offsetHeight) || 400;
@@ -191,7 +232,22 @@ function savePos(left, top) {
   safeCall(function () { saveSettingsDebounced(); });
 }
 
-/** 强制挂到 body + 可见性兜底样式 */
+function getRoot() {
+  return document.getElementById(ROOT_ID);
+}
+
+function isRootHidden(root) {
+  if (!root) return true;
+  if (root.classList.contains('eighttailcat-hidden')) return true;
+  const d = (root.style && root.style.display) || '';
+  if (d === 'none') return true;
+  try {
+    const cs = window.getComputedStyle(root);
+    if (cs && cs.display === 'none') return true;
+  } catch (_) {}
+  return false;
+}
+
 function ensureOverlayOnBody(el) {
   if (!el) return el;
   try {
@@ -207,15 +263,18 @@ function ensureOverlayOnBody(el) {
     el.style.setProperty('overflow', 'visible', 'important');
     el.style.setProperty('border', '0', 'important');
     el.style.setProperty('background', 'transparent', 'important');
-    /* 父层不拦截：由 iframe / fallback 自己接收事件 */
     el.style.setProperty('pointer-events', 'none', 'important');
     el.style.setProperty('transition', 'none', 'important');
-    /* 给气泡/按钮留空，禁止只包住猫身 */
     if (!el.classList.contains('eighttailcat-expanded')) {
       el.style.setProperty('width', 'min(300px, 78vw)', 'important');
       el.style.setProperty('height', 'min(400px, 72vh)', 'important');
     }
-    if (!el.classList.contains('eighttailcat-hidden')) {
+    /* 尊重显隐：隐藏时绝不再强制 display:block */
+    if (isRootHidden(el) || !ensureSettings().visible) {
+      el.classList.add('eighttailcat-hidden');
+      el.style.setProperty('display', 'none', 'important');
+    } else {
+      el.classList.remove('eighttailcat-hidden');
       el.style.setProperty('display', 'block', 'important');
       el.style.setProperty('visibility', 'visible', 'important');
       el.style.setProperty('opacity', '1', 'important');
@@ -233,7 +292,7 @@ function forceShowStyles(el) {
 }
 
 function ensureFallbackFace(overlay) {
-  let face = document.getElementById(FALLBACK_ID);
+  let face = overlay.querySelector('#' + FALLBACK_ID);
   if (face) return face;
   face = document.createElement('div');
   face.id = FALLBACK_ID;
@@ -242,7 +301,7 @@ function ensureFallbackFace(overlay) {
   face.style.cssText = [
     'position:absolute',
     'inset:0',
-    'display:flex',
+    'display:none',
     'align-items:center',
     'justify-content:center',
     'font-size:72px',
@@ -269,42 +328,58 @@ function pointFromMessage(data) {
   return { x: 0, y: 0 };
 }
 
-function setPetVisible(visible, opts) {
-  opts = opts || {};
-  const overlay = document.getElementById(OVERLAY_ID) ||
-    (opts.mountIfNeeded ? mountOverlay(getExtBase()) : null);
-  const s = ensureSettings();
-  s.visible = !!visible;
-  writeVisibleToLocal(!!visible);
-  if (!opts.skipSave) safeCall(function () { saveSettingsDebounced(); });
-  if (overlay) {
-    ensureOverlayOnBody(overlay);
-    if (visible) {
-      forceShowStyles(overlay);
-      if (opts.center) {
-        const c = centerPos(overlay);
-        setOverlayPos(overlay, c.left, c.top);
-        savePos(c.left, c.top);
-      } else {
-        try { applySavedOrDefaultPos(overlay); } catch (_) {}
-      }
-    } else {
-      overlay.classList.add('eighttailcat-hidden');
-    }
+/**
+ * 全局显隐（门按钮 / 猫爪球 / 侧边栏共用）
+ * @param {boolean|undefined} forceState true=显示，false=隐藏，省略=取反
+ */
+function togglePetVisibility(forceState) {
+  let root = getRoot();
+  if (!root && (forceState === true || forceState === undefined)) {
+    root = mountOverlay(getExtBase());
   }
+  if (!root) return false;
+
+  const isCurrentlyHidden = isRootHidden(root) || !ensureSettings().visible;
+  const nextState = (forceState !== undefined) ? !!forceState : isCurrentlyHidden;
+
+  const s = ensureSettings();
+  s.visible = nextState;
+  writeVisibleToLocal(nextState);
+  safeCall(function () { saveSettingsDebounced(); });
+
+  ensureOverlayOnBody(root);
+  if (nextState) {
+    forceShowStyles(root);
+    try { applySavedOrDefaultPos(root); } catch (_) {}
+  } else {
+    root.classList.add('eighttailcat-hidden');
+    root.style.setProperty('display', 'none', 'important');
+  }
+
   syncDock();
   syncToggleButtonLabel();
+  return nextState;
 }
 
-/** 显示并瞬移到屏幕正中央（侧边栏「显示桌宠」专用） */
+function setPetVisible(visible, opts) {
+  opts = opts || {};
+  if (visible && opts.mountIfNeeded && !getRoot()) mountOverlay(getExtBase());
+  const shown = togglePetVisibility(!!visible);
+  if (shown && opts.center) {
+    const el = getRoot();
+    if (el) {
+      const c = centerPos(el);
+      setOverlayPos(el, c.left, c.top);
+      savePos(c.left, c.top);
+    }
+  }
+}
+
 function showPetCentered() {
-  const overlay = mountOverlay(getExtBase());
-  ensureOverlayOnBody(overlay);
-  forceShowStyles(overlay);
-  setPetVisible(true, { mountIfNeeded: true, center: true, skipSave: false });
-  /* 再保险：显式居中一次（等布局算完） */
+  mountOverlay(getExtBase());
+  togglePetVisibility(true);
   requestAnimationFrame(function () {
-    const el = document.getElementById(OVERLAY_ID);
+    const el = getRoot();
     if (!el) return;
     forceShowStyles(el);
     const c = centerPos(el);
@@ -313,12 +388,133 @@ function showPetCentered() {
   });
 }
 
+function togglePet() {
+  togglePetVisibility();
+}
+
+let hostListenersBound = false;
+
+function bindHostListenersOnce() {
+  if (hostListenersBound || window.__EIGHT_TAIL_MOBILE_MSG_BOUND__) {
+    hostListenersBound = true;
+    return;
+  }
+  hostListenersBound = true;
+  window.__EIGHT_TAIL_MOBILE_MSG_BOUND__ = true;
+
+  let dragging = false;
+  let startSX = 0;
+  let startSY = 0;
+  let originL = 0;
+  let originT = 0;
+
+  window.addEventListener('message', function (ev) {
+    const data = ev && ev.data;
+    if (!data || typeof data !== 'object') return;
+
+    /* 短视频：不依赖桌宠 root，避免隐藏桌宠时打不开 */
+    if (
+      data.type === 'eight-tail-open-short-video' ||
+      data.type === 'eighttailcat-open-short-video'
+    ) {
+      openShortVideoPlayer();
+      return;
+    }
+    if (
+      data.type === 'eight-tail-close-short-video' ||
+      data.type === 'eighttailcat-close-short-video'
+    ) {
+      closeShortVideoPlayer();
+      return;
+    }
+
+    const root = getRoot();
+    if (!root) return;
+
+    if (data.type === 'eighttailcat-drag-start') {
+      ensureOverlayOnBody(root);
+      dragging = true;
+      root.classList.add('is-dragging');
+      root.style.transition = 'none';
+      const p = pointFromMessage(data);
+      startSX = p.x;
+      startSY = p.y;
+      const cur = readOverlayPos(root);
+      originL = cur.left;
+      originT = cur.top;
+    } else if (data.type === 'eighttailcat-drag-move' && dragging) {
+      const p = pointFromMessage(data);
+      scheduleOverlayPos(root, originL + (p.x - startSX), originT + (p.y - startSY));
+    } else if (data.type === 'eighttailcat-drag-end') {
+      dragging = false;
+      root.classList.remove('is-dragging');
+      if (overlayRaf) {
+        cancelAnimationFrame(overlayRaf);
+        overlayRaf = 0;
+        setOverlayPos(root, pendingLeft, pendingTop);
+      }
+      const pos = readOverlayPos(root);
+      const clamped = setOverlayPos(root, pos.left, pos.top);
+      savePos(clamped.left, clamped.top);
+      root.style.willChange = 'auto';
+    } else if (
+      data.type === 'eighttailcat-hide' ||
+      data.type === 'eight-tail-mobile-hide'
+    ) {
+      togglePetVisibility(false);
+    } else if (
+      data.type === 'eighttailcat-show' ||
+      data.type === 'eight-tail-mobile-show'
+    ) {
+      showPetCentered();
+    } else if (
+      data.type === 'eighttailcat-toggle-visible' ||
+      data.type === 'eight-tail-mobile-toggle'
+    ) {
+      togglePetVisibility();
+    } else if (data.type === 'eighttailcat-expand') {
+      root.classList.toggle('eighttailcat-expanded', !!data.on);
+      if (data.on) {
+        const c = centerPos(root);
+        setOverlayPos(root, c.left, Math.max(EDGE_PAD, window.innerHeight - (root.offsetHeight || 360) - EDGE_PAD));
+      } else {
+        applySavedOrDefaultPos(root);
+      }
+    } else if (data.type === 'eighttailcat-open-settings') {
+      openPetSettings();
+    }
+  }, false);
+
+  window.addEventListener('resize', function () {
+    const root = getRoot();
+    if (root && !isRootHidden(root)) {
+      const cur = readOverlayPos(root);
+      setOverlayPos(root, cur.left, cur.top);
+    }
+    clampDockPosition();
+  });
+}
+
 function mountOverlay(base) {
-  let overlay = document.getElementById(OVERLAY_ID);
-  if (overlay) return ensureOverlayOnBody(overlay);
+  bindHostListenersOnce();
+
+  let overlay = getRoot();
+  if (overlay) {
+    /* 已有单例：确保在 body，并保证只有一个 iframe */
+    ensureOverlayOnBody(overlay);
+    const frames = overlay.querySelectorAll('iframe');
+    for (let i = 1; i < frames.length; i++) {
+      try { frames[i].remove(); } catch (_) {}
+    }
+    return overlay;
+  }
+
+  /* 真正新建前再清一次幽灵，避免竞态 */
+  purgeGhostPets();
 
   overlay = document.createElement('div');
-  overlay.id = OVERLAY_ID;
+  overlay.id = ROOT_ID;
+  overlay.dataset.eightTailMobile = 'root';
   overlay.setAttribute('aria-label', '八条猫桌宠 (移动触屏版)');
   overlay.style.touchAction = 'none';
   overlay.style.willChange = 'transform';
@@ -338,12 +534,18 @@ function mountOverlay(base) {
   iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:auto;overflow:visible;';
   iframe.src = (base || getExtBase()) + 'index.html';
   iframe.addEventListener('load', function () {
-    const face = document.getElementById(FALLBACK_ID);
-    if (face) face.style.opacity = '0.15';
+    const face = overlay.querySelector('#' + FALLBACK_ID);
+    if (face) {
+      face.style.display = 'none';
+      face.style.opacity = '0';
+    }
   });
   iframe.addEventListener('error', function () {
-    const face = document.getElementById(FALLBACK_ID);
-    if (face) face.style.opacity = '1';
+    const face = overlay.querySelector('#' + FALLBACK_ID);
+    if (face) {
+      face.style.display = 'flex';
+      face.style.opacity = '1';
+    }
   });
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
@@ -351,88 +553,17 @@ function mountOverlay(base) {
 
   const s = ensureSettings();
   if (s.visible) forceShowStyles(overlay);
-  else overlay.classList.add('eighttailcat-hidden');
+  else {
+    overlay.classList.add('eighttailcat-hidden');
+    overlay.style.setProperty('display', 'none', 'important');
+  }
 
-  /* 等一帧再定位，避免 offsetWidth=0 导致坐标异常 */
   requestAnimationFrame(function () {
-    applySavedOrDefaultPos(overlay);
+    if (!isRootHidden(overlay)) applySavedOrDefaultPos(overlay);
   });
   writeVisibleToLocal(!!s.visible);
-
-  let dragging = false;
-  let startSX = 0;
-  let startSY = 0;
-  let originL = 0;
-  let originT = 0;
-
-  window.addEventListener('message', function (ev) {
-    const data = ev && ev.data;
-    if (!data || typeof data !== 'object') return;
-    if (data.type === 'eighttailcat-drag-start') {
-      ensureOverlayOnBody(overlay);
-      dragging = true;
-      overlay.classList.add('is-dragging');
-      overlay.style.transition = 'none';
-      const p = pointFromMessage(data);
-      startSX = p.x;
-      startSY = p.y;
-      const cur = readOverlayPos(overlay);
-      originL = cur.left;
-      originT = cur.top;
-    } else if (data.type === 'eighttailcat-drag-move' && dragging) {
-      const p = pointFromMessage(data);
-      scheduleOverlayPos(overlay, originL + (p.x - startSX), originT + (p.y - startSY));
-    } else if (data.type === 'eighttailcat-drag-end') {
-      dragging = false;
-      overlay.classList.remove('is-dragging');
-      if (overlayRaf) {
-        cancelAnimationFrame(overlayRaf);
-        overlayRaf = 0;
-        setOverlayPos(overlay, pendingLeft, pendingTop);
-      }
-      const pos = readOverlayPos(overlay);
-      const clamped = setOverlayPos(overlay, pos.left, pos.top);
-      savePos(clamped.left, clamped.top);
-      overlay.style.willChange = 'auto';
-    } else if (data.type === 'eighttailcat-hide') {
-      setPetVisible(false);
-    } else if (data.type === 'eighttailcat-show') {
-      showPetCentered();
-    } else if (data.type === 'eighttailcat-expand') {
-      overlay.classList.toggle('eighttailcat-expanded', !!data.on);
-      if (data.on) {
-        const c = centerPos(overlay);
-        setOverlayPos(overlay, c.left, Math.max(EDGE_PAD, window.innerHeight - (overlay.offsetHeight || 360) - EDGE_PAD));
-      } else {
-        applySavedOrDefaultPos(overlay);
-      }
-    } else if (data.type === 'eighttailcat-open-settings') {
-      openPetSettings();
-    } else if (data.type === 'eighttailcat-toggle-visible') {
-      togglePet();
-    }
-  }, { passive: true });
-
-  window.addEventListener('resize', function () {
-    const cur = readOverlayPos(overlay);
-    setOverlayPos(overlay, cur.left, cur.top);
-    clampDockPosition();
-  });
-
   syncDock();
   return overlay;
-}
-
-function togglePet() {
-  const overlay = document.getElementById(OVERLAY_ID) || mountOverlay(getExtBase());
-  ensureOverlayOnBody(overlay);
-  const hidden = overlay.classList.contains('eighttailcat-hidden') || !ensureSettings().visible;
-  if (hidden) {
-    /* 「显示桌宠」：强制现身并瞬移到屏幕正中央 */
-    showPetCentered();
-  } else {
-    setPetVisible(false);
-  }
 }
 
 function openPetSettings() {
@@ -456,7 +587,7 @@ const SETTINGS_FALLBACK = `
       <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
     </div>
     <div class="inline-drawer-content">
-      <p class="margin0">可用侧边栏或屏幕右侧猫爪按钮显示/隐藏桌宠。点「显示桌宠」会立刻召唤到屏幕中央。</p>
+      <p class="margin0">可用侧边栏或屏幕右侧猫爪按钮显示/隐藏桌宠。点「显示桌宠」会立刻召唤到屏幕中央。门按钮🚪也会隐藏桌宠。</p>
       <div class="eighttailcat-actions">
         <div id="eighttailcat-mobile-open-panel" class="menu_button menu_button_icon">打开八条猫面板</div>
         <div id="eighttailcat-mobile-toggle-pet" class="menu_button menu_button_icon">显示桌宠</div>
@@ -491,13 +622,14 @@ function bindSettingsButtons($scope) {
   }
   function onToggle(e) {
     try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
-    togglePet();
+    const root = getRoot();
+    if (!root || isRootHidden(root)) showPetCentered();
+    else togglePetVisibility(false);
   }
 
   $root.find('#eighttailcat-mobile-open-panel').off('click.etcMobile').on('click.etcMobile', onOpen);
   $root.find('#eighttailcat-mobile-toggle-pet').off('click.etcMobile').on('click.etcMobile', onToggle);
 
-  /* 原生兜底（无 jQuery 时也能点） */
   const openBtn = document.getElementById('eighttailcat-mobile-open-panel');
   const togBtn = document.getElementById('eighttailcat-mobile-toggle-pet');
   if (openBtn && !openBtn.dataset.etcBound) {
@@ -514,9 +646,8 @@ function bindSettingsButtons($scope) {
 function syncToggleButtonLabel() {
   const btn = document.getElementById('eighttailcat-mobile-toggle-pet');
   if (!btn) return;
-  const visible = !!(ensureSettings().visible &&
-    document.getElementById(OVERLAY_ID) &&
-    !document.getElementById(OVERLAY_ID).classList.contains('eighttailcat-hidden'));
+  const root = getRoot();
+  const visible = !!(ensureSettings().visible && root && !isRootHidden(root));
   btn.textContent = visible ? '隐藏桌宠' : '显示桌宠';
 }
 
@@ -591,16 +722,21 @@ function clampDockTop(top, dockH) {
 
 function applyDockTop(dock, top) {
   const y = clampDockTop(top, dock.offsetHeight || 42);
-  dock.style.top = y + 'px';
-  dock.style.right = '0';
-  dock.style.bottom = 'auto';
-  dock.style.transform = 'none';
+  dock.style.setProperty('top', y + 'px', 'important');
+  dock.style.setProperty('right', '0', 'important');
+  dock.style.setProperty('bottom', 'auto', 'important');
+  dock.style.setProperty('transform', 'none', 'important');
+  dock.style.setProperty('display', 'flex', 'important');
+  dock.style.setProperty('visibility', 'visible', 'important');
+  dock.style.setProperty('opacity', '1', 'important');
+  dock.style.setProperty('pointer-events', 'auto', 'important');
+  dock.style.setProperty('z-index', '100001', 'important');
   dock.dataset.dockTop = String(y);
   return y;
 }
 
 function clampDockPosition() {
-  const dock = document.getElementById(DOCK_ID);
+  const dock = document.getElementById(TOGGLE_ID);
   if (!dock) return;
   const saved = dock.dataset.dockTop != null
     ? parseFloat(dock.dataset.dockTop)
@@ -612,25 +748,59 @@ function clampDockPosition() {
   applyDockTop(dock, saved);
 }
 
+function forceDockAlwaysVisible(dock) {
+  if (!dock) return;
+  dock.style.setProperty('display', 'flex', 'important');
+  dock.style.setProperty('visibility', 'visible', 'important');
+  dock.style.setProperty('opacity', '1', 'important');
+  dock.style.setProperty('pointer-events', 'auto', 'important');
+  dock.style.setProperty('z-index', '100001', 'important');
+  dock.style.setProperty('position', 'fixed', 'important');
+}
+
 function ensureDock() {
-  let dock = document.getElementById(DOCK_ID);
+  let dock = document.getElementById(TOGGLE_ID);
   if (dock) {
     if (dock.parentNode !== document.body) document.body.appendChild(dock);
+    forceDockAlwaysVisible(dock);
     return dock;
   }
 
+  /* 清掉旧悬浮球后再建 */
+  LEGACY_TOGGLE_IDS.forEach(function (id) {
+    try {
+      document.querySelectorAll('#' + id).forEach(function (el) { el.remove(); });
+    } catch (_) {}
+  });
+
   dock = document.createElement('button');
-  dock.id = DOCK_ID;
+  dock.id = TOGGLE_ID;
+  dock.dataset.eightTailMobile = 'toggle';
   dock.type = 'button';
   dock.setAttribute('aria-label', '显示或隐藏八条猫');
   dock.title = '显示 / 隐藏桌宠';
   dock.innerHTML = '<span class="etc-dock-paw" aria-hidden="true">🐾</span>';
+  forceDockAlwaysVisible(dock);
 
   let dragging = false;
   let moved = false;
   let startY = 0;
   let originTop = 0;
   let pointerId = null;
+  let lastToggleAt = 0;
+
+  function doToggleFromDock(e) {
+    try {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    } catch (_) {}
+    const now = Date.now();
+    if (now - lastToggleAt < 320) return;
+    lastToggleAt = now;
+    togglePetVisibility();
+  }
 
   dock.addEventListener('pointerdown', function (e) {
     if (e.button != null && e.button !== 0) return;
@@ -643,9 +813,8 @@ function ensureDock() {
     dock.classList.add('is-dragging');
     dock.style.transition = 'none';
     try { dock.setPointerCapture(e.pointerId); } catch (_) {}
-    e.preventDefault();
     e.stopPropagation();
-  });
+  }, { passive: false });
 
   dock.addEventListener('pointermove', function (e) {
     if (!dragging) return;
@@ -656,7 +825,7 @@ function ensureDock() {
     applyDockTop(dock, originTop + dy);
     e.preventDefault();
     e.stopPropagation();
-  });
+  }, { passive: false });
 
   function endDockPointer(e) {
     if (!dragging) return;
@@ -667,21 +836,29 @@ function ensureDock() {
     pointerId = null;
     if (moved) {
       writeDockTopToLocal(applyDockTop(dock, parseFloat(dock.dataset.dockTop)));
-      e.preventDefault();
-      e.stopPropagation();
+      try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
       return;
     }
-    e.preventDefault();
-    e.stopPropagation();
-    togglePet();
+    doToggleFromDock(e);
   }
 
   dock.addEventListener('pointerup', endDockPointer);
   dock.addEventListener('pointercancel', endDockPointer);
+
   dock.addEventListener('click', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
+    /* 未拖动时 click 再兜一次（部分 WebView pointerup 丢失） */
+    if (moved) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    doToggleFromDock(e);
   });
+
+  dock.addEventListener('touchend', function (e) {
+    if (moved || dragging) return;
+    doToggleFromDock(e);
+  }, { passive: false });
 
   document.body.appendChild(dock);
   const savedTop = readDockTopFromLocal();
@@ -692,55 +869,122 @@ function ensureDock() {
 }
 
 function syncDock() {
-  const dock = document.getElementById(DOCK_ID) || ensureDock();
-  const overlay = document.getElementById(OVERLAY_ID);
-  const visible = !!(ensureSettings().visible && overlay && !overlay.classList.contains('eighttailcat-hidden'));
+  const dock = document.getElementById(TOGGLE_ID) || ensureDock();
+  forceDockAlwaysVisible(dock);
+  const root = getRoot();
+  const visible = !!(ensureSettings().visible && root && !isRootHidden(root));
   dock.classList.toggle('is-collapsed', !visible);
   dock.title = visible ? '收起桌宠' : '展开桌宠';
   dock.setAttribute('aria-label', dock.title);
 }
 
-/* ---------- 启动 ---------- */
-jQuery(async function () {
+/* ---------- 启动（全局单例锁，防脚本重复执行） ---------- */
+function bootMobilePet() {
+  /* 每次启动都清旧 ID 幽灵；保留当前单例 root（若有） */
+  const keep = document.getElementById(ROOT_ID);
+  LEGACY_ROOT_IDS.forEach(function (id) {
+    if (id === ROOT_ID) return;
+    try {
+      document.querySelectorAll('#' + id).forEach(function (n) { n.remove(); });
+    } catch (_) {}
+  });
+  LEGACY_TOGGLE_IDS.forEach(function (id) {
+    if (id === TOGGLE_ID) return;
+    try {
+      document.querySelectorAll('#' + id).forEach(function (n) { n.remove(); });
+    } catch (_) {}
+  });
+  /* 同 ID 多节点：只留第一个 */
   try {
-    ensureSettings();
-    writeVisibleToLocal(!!ensureSettings().visible);
-    const overlay0 = mountOverlay(getExtBase());
-    ensureOverlayOnBody(overlay0);
-    if (ensureSettings().visible) forceShowStyles(overlay0);
-    ensureDock();
-    scheduleSettingsInjection();
+    const roots = document.querySelectorAll('#' + ROOT_ID);
+    for (let i = 1; i < roots.length; i++) roots[i].remove();
+    const toggles = document.querySelectorAll('#' + TOGGLE_ID);
+    for (let i = 1; i < toggles.length; i++) toggles[i].remove();
+  } catch (_) {}
 
-    /* 防止酒馆 DOM 重排把浮层塞回 overflow:hidden 容器 */
-    setInterval(function () {
-      const el = document.getElementById(OVERLAY_ID);
-      if (el) ensureOverlayOnBody(el);
-      const dock = document.getElementById(DOCK_ID);
-      if (dock && dock.parentElement !== document.body) {
+  if (window.__EIGHT_TAIL_MOBILE_BOOTED__ && keep && document.getElementById(ROOT_ID)) {
+    ensureOverlayOnBody(document.getElementById(ROOT_ID));
+    ensureDock();
+    syncDock();
+    bindHostListenersOnce();
+    return;
+  }
+  window.__EIGHT_TAIL_MOBILE_BOOTED__ = true;
+
+  if (!document.getElementById(ROOT_ID)) purgeGhostPets();
+  ensureSettings();
+  writeVisibleToLocal(!!ensureSettings().visible);
+  bindHostListenersOnce();
+  const overlay0 = mountOverlay(getExtBase());
+  ensureOverlayOnBody(overlay0);
+  if (ensureSettings().visible) forceShowStyles(overlay0);
+  else {
+    overlay0.classList.add('eighttailcat-hidden');
+    overlay0.style.setProperty('display', 'none', 'important');
+  }
+  ensureDock();
+  scheduleSettingsInjection();
+
+  setInterval(function () {
+    const el = getRoot();
+    if (el) ensureOverlayOnBody(el);
+    LEGACY_ROOT_IDS.forEach(function (id) {
+      if (id === ROOT_ID) return;
+      try {
+        document.querySelectorAll('#' + id).forEach(function (n) { n.remove(); });
+      } catch (_) {}
+    });
+    const roots = document.querySelectorAll('#' + ROOT_ID);
+    for (let i = 1; i < roots.length; i++) {
+      try { roots[i].remove(); } catch (_) {}
+    }
+    const dock = document.getElementById(TOGGLE_ID);
+    if (dock) {
+      if (dock.parentElement !== document.body) {
         try { document.body.appendChild(dock); } catch (_) {}
       }
-    }, 2000);
-
-    if (eventSource && event_types && event_types.APP_READY) {
-      eventSource.on(event_types.APP_READY, function () {
-        ensureOverlayOnBody(document.getElementById(OVERLAY_ID) || mountOverlay(getExtBase()));
-        if (ensureSettings().visible) {
-          const el = document.getElementById(OVERLAY_ID);
-          if (el) forceShowStyles(el);
-        }
-        injectSettingsDrawer().catch(function () {});
-        ensureDock();
-        syncDock();
-        clampDockPosition();
-      });
+      forceDockAlwaysVisible(dock);
+    } else {
+      ensureDock();
     }
+  }, 2500);
+
+  if (eventSource && event_types && event_types.APP_READY) {
+    eventSource.on(event_types.APP_READY, function () {
+      if (!getRoot()) mountOverlay(getExtBase());
+      else ensureOverlayOnBody(getRoot());
+      if (ensureSettings().visible) {
+        const el = getRoot();
+        if (el) forceShowStyles(el);
+      }
+      injectSettingsDrawer().catch(function () {});
+      ensureDock();
+      syncDock();
+      clampDockPosition();
+    });
+  }
+}
+
+/* 暴露给调试 / 外部调用 */
+try {
+  window.togglePetVisibility = togglePetVisibility;
+  window.__eightTailMobileToggle = togglePetVisibility;
+  window.openShortVideoPlayer = openShortVideoPlayer;
+  window.closeShortVideoPlayer = closeShortVideoPlayer;
+  window.isShortVideoOpen = isShortVideoOpen;
+} catch (_) {}
+
+jQuery(async function () {
+  try {
+    bootMobilePet();
   } catch (err) {
     console.error('[EightTailCat-Pet-Mobile] 启动失败', err);
-    /* 最后兜底：仍尝试挂一个可见容器 */
     try {
+      purgeGhostPets();
       const el = mountOverlay(getExtBase());
       forceShowStyles(el);
       ensureOverlayOnBody(el);
+      ensureDock();
     } catch (_) {}
   }
 });

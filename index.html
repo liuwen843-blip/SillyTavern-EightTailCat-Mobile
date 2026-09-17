@@ -231,7 +231,7 @@
       outline: none !important;
       background: transparent !important;
     }
-    /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #pet-container-mobile 承担 */
+    /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #eight-tail-pet-mobile-root 承担 */
     html.st-extension-host #pet {
       left: 50% !important;
       /* 略偏下，给上方气泡留空 */
@@ -991,6 +991,17 @@
       box-shadow: 0 6px 16px rgba(40, 60, 90, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.7) inset !important;
     }
 
+    #chat-spark,
+    #memo-btn,
+    #food-btn,
+    #game-btn,
+    #btn-pet-quit,
+    .pet-quit-btn,
+    #fav-star {
+      pointer-events: auto !important;
+      touch-action: manipulation !important;
+    }
+
     /* ✨ 触发对话：与抓鼠标解耦 */
     #chat-spark {
       position: absolute;
@@ -1552,7 +1563,8 @@
       background: linear-gradient(160deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
-    .app-hub-icon[data-app="douyin"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
+    .app-hub-icon[data-app="douyin"] .app-emoji,
+    .app-hub-icon[data-app="short-video"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
     .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
     .app-hub-icon[data-app="discord"] .app-emoji { background: linear-gradient(160deg, #7289da, #5865f2); }
     .app-hub-icon .app-name {
@@ -3771,7 +3783,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="应用中心" aria-label="应用中心">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="刷短视频（酒馆内嵌）" aria-label="刷短视频">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -3896,7 +3908,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：点 📱 打开应用中心；长按 📱 可生成今日简报。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：点 📱 打开内嵌短视频（不离开酒馆）；长按 📱 可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -3913,28 +3925,19 @@
       </div>
     </div>
 
-    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="应用中心" aria-hidden="true">
-      <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭应用中心">✕</button>
+    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="短视频" aria-hidden="true">
+      <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
-        <h3 class="app-hub-title">应用中心</h3>
-        <p class="app-hub-sub">官方站点禁止 iframe 内嵌。<br />点击图标将在新标签页安全打开。</p>
-        <div id="app-hub-grid" aria-label="应用列表">
-          <button type="button" class="app-hub-icon" data-app="douyin" data-url="https://www.douyin.com/">
+        <h3 class="app-hub-title">刷一刷</h3>
+        <p class="app-hub-sub">酒馆内嵌短视频 · 不离开当前页面<br />等待 AI 吐字时也能安心刷，不会切屏断连</p>
+        <div id="app-hub-grid" aria-label="内嵌应用">
+          <button type="button" class="app-hub-icon" data-app="short-video" data-action="short-video">
             <span class="app-emoji" aria-hidden="true">🎵</span>
-            <span class="app-name">抖音</span>
-            <span class="app-open-hint">新窗口</span>
-          </button>
-          <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-url="https://www.xiaohongshu.com/explore">
-            <span class="app-emoji" aria-hidden="true">📕</span>
-            <span class="app-name">小红书</span>
-            <span class="app-open-hint">新窗口</span>
-          </button>
-          <button type="button" class="app-hub-icon" data-app="discord" data-url="https://discord.com/app">
-            <span class="app-emoji" aria-hidden="true">💬</span>
-            <span class="app-name">Discord</span>
-            <span class="app-open-hint">新窗口</span>
+            <span class="app-name">短视频</span>
+            <span class="app-open-hint">内嵌播放</span>
           </button>
         </div>
+        <p class="app-hub-sub" style="margin-top:22px;margin-bottom:0;font-size:11px;opacity:.7;">上下滑动切换 · 单击暂停 · 默认静音<br />自定义视频源可在播放器底部填写</p>
       </div>
     </div>
 
@@ -12923,48 +12926,70 @@
         }, 1000);
       }
 
-      let appHubCurrentUrl = ""; // 保留变量名兼容旧调用（应用中心已改为外开）
+      let appHubCurrentUrl = ""; // 兼容旧调用
+
+      /** 请求宿主层打开全屏短视频（挂在酒馆 document.body，不离开当前页） */
+      function requestOpenShortVideo() {
+        /* 优先直接调宿主方法，避免只靠 postMessage 时误开小面板 */
+        try {
+          if (window.parent && window.parent !== window && typeof window.parent.openShortVideoPlayer === "function") {
+            window.parent.openShortVideoPlayer();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.openShortVideoPlayer === "function") {
+            window.openShortVideoPlayer();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof notifyStHost === "function") {
+            notifyStHost({ type: "eight-tail-open-short-video" });
+            return true;
+          }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: "eight-tail-open-short-video" }, "*");
+            return true;
+          }
+        } catch (_) {}
+        return false;
+      }
 
       function openAppHubModal() {
         if (IS_SETTINGS_WINDOW) return;
-        const modal = document.getElementById("app-hub-modal");
-        if (!modal) return;
         try { closeGameModal(); } catch (_) {}
         try { closeNewsBriefModal(); } catch (_) {}
         const memoPanel = document.getElementById("memo-panel");
         if (memoPanel) memoPanel.classList.remove("open");
         const chatPanel = document.getElementById("chat-panel");
         if (chatPanel) chatPanel.classList.remove("open");
-        modal.classList.add("open");
-        modal.setAttribute("aria-hidden", "false");
+        try { closeAppHubModal(); } catch (_) {}
+        /* 直接打开内嵌短视频，不等待外链 / iframe */
+        const ok = requestOpenShortVideo();
+        if (!ok) {
+          const modal = document.getElementById("app-hub-modal");
+          if (modal) {
+            modal.classList.add("open");
+            modal.setAttribute("aria-hidden", "false");
+          }
+        }
         try { syncCapsuleOverlay(); } catch (_) {}
         try { reportHitRect(); } catch (_) {}
         markActivity();
       }
 
-      /** 官方站点禁止 iframe：一律新标签页打开 */
-      function openAppInHub(name, url) {
-        const target = String(url || "").trim();
-        if (!target) return;
-        let opened = null;
-        try {
-          opened = window.open(target, "_blank", "noopener,noreferrer");
-        } catch (_) {}
-        if (!opened) {
-          try {
-            const a = document.createElement("a");
-            a.href = target;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            a.style.display = "none";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-          } catch (_) {
-            try { location.href = target; } catch (__) {}
-          }
+      /** 已废除外开：视频走内嵌播放器 */
+      function openAppInHub(name, url, action) {
+        if (action === "short-video" || !url) {
+          requestOpenShortVideo();
+          try { closeAppHubModal(); } catch (_) {}
+          try { showToast("已打开内嵌短视频", 1200); } catch (_) {}
+          return;
         }
-        try { showToast((name || "应用") + " 已在新窗口打开", 1600); } catch (_) {}
+        /* 其它入口也强制内嵌短视频，禁止 window.open 切屏 */
+        requestOpenShortVideo();
+        try { closeAppHubModal(); } catch (_) {}
       }
 
       function bindAppHubUi() {
@@ -12978,6 +13003,11 @@
             e.preventDefault();
             e.stopPropagation();
             closeAppHubModal();
+            try {
+              if (typeof notifyStHost === "function") {
+                notifyStHost({ type: "eight-tail-close-short-video" });
+              }
+            } catch (_) {}
           });
         }
         if (grid) {
@@ -12986,12 +13016,23 @@
             if (!btn) return;
             e.preventDefault();
             e.stopPropagation();
-            const nameEl = btn.querySelector(".app-name");
             openAppInHub(
-              (nameEl && nameEl.textContent) || btn.getAttribute("data-app"),
-              btn.getAttribute("data-url")
+              btn.getAttribute("data-app"),
+              btn.getAttribute("data-url"),
+              btn.getAttribute("data-action") || "short-video"
             );
           });
+          grid.addEventListener("touchend", function (e) {
+            const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openAppInHub(
+              btn.getAttribute("data-app"),
+              btn.getAttribute("data-url"),
+              btn.getAttribute("data-action") || "short-video"
+            );
+          }, { passive: false });
         }
         if (modal) {
           modal.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
@@ -13000,7 +13041,7 @@
       }
 
       function openClickerModal() {
-        /* 移动版：连点器已替换为应用中心 */
+        /* 移动版：连点器已替换为内嵌短视频 */
         openAppHubModal();
       }
 
@@ -15412,7 +15453,33 @@
 
       window.randomPickFood = randomPickFood;
 
+      function notifyHostHidePet() {
+        try {
+          if (typeof notifyStHost === "function") {
+            notifyStHost({ type: "eighttailcat-hide" });
+            notifyStHost({ type: "eight-tail-mobile-hide" });
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: "eighttailcat-hide" }, "*");
+            window.parent.postMessage({ type: "eight-tail-mobile-hide" }, "*");
+            return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
       function executePetQuit() {
+        /* 酒馆 iframe：隐藏桌宠；独立桌面模式走 bridge */
+        try {
+          if (typeof isEmbeddedHost === "function" && isEmbeddedHost()) {
+            notifyHostHidePet();
+            return;
+          }
+        } catch (_) {}
+
         try {
           if (typeof saveCurrentSession === "function") {
             saveCurrentSession();
@@ -15436,11 +15503,22 @@
           }
         } catch (_) {}
 
+        /* 最后兜底：仍尝试通知宿主隐藏 */
+        if (notifyHostHidePet()) return;
         try { window.close(); } catch (_) {}
       }
 
       function requestPetQuit() {
         if (IS_SETTINGS_WINDOW) return;
+        /* 移动酒馆：门按钮直接隐藏，跳过确认气泡 */
+        try {
+          if (typeof isEmbeddedHost === "function" && isEmbeddedHost()) {
+            try { hideBubble(); } catch (_) {}
+            notifyHostHidePet();
+            return;
+          }
+        } catch (_) {}
+
         clearBubbleTimer();
         stopBubbleAutoScroll();
         bubblePaused = false;
@@ -15481,34 +15559,62 @@
         }, 280);
       }
 
+      /** 侧栏圆形按钮：click + touchend 防抖，避免拖拽抢点击 */
+      function bindTapAction(el, handler) {
+        if (!el || el.dataset.etcTapBound === "1") return;
+        el.dataset.etcTapBound = "1";
+        try { el.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
+        let last = 0;
+        function fire(e) {
+          try {
+            if (e) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            }
+          } catch (_) {}
+          const now = Date.now();
+          if (now - last < 280) return;
+          last = now;
+          try { handler(e); } catch (err) {
+            console.warn("[EightTailCat] tap action", err);
+          }
+        }
+        el.addEventListener("click", fire, true);
+        el.addEventListener("touchend", fire, { capture: true, passive: false });
+        el.addEventListener("pointerdown", function (e) {
+          try { e.stopPropagation(); } catch (_) {}
+        }, true);
+        el.addEventListener("touchstart", function (e) {
+          try { e.stopPropagation(); } catch (_) {}
+        }, { capture: true, passive: true });
+      }
+
       function bindPetQuitUi() {
         const quitBtn = document.getElementById("btn-pet-quit");
         const quitConfirm = document.getElementById("btn-quit-confirm");
         const quitCancel = document.getElementById("btn-quit-cancel");
         if (quitBtn && !IS_SETTINGS_WINDOW) {
-          quitBtn.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            requestPetQuit();
-          });
-          quitBtn.addEventListener("pointerdown", function (e) {
-            e.stopPropagation();
-          });
+          quitBtn.tabIndex = 0;
+          try { quitBtn.style.setProperty("pointer-events", "auto", "important"); } catch (_) {}
+          bindTapAction(quitBtn, function () { requestPetQuit(); });
         }
-        if (quitConfirm) {
-          quitConfirm.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            confirmPetQuit();
-          });
-        }
-        if (quitCancel) {
-          quitCancel.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            cancelPetQuitConfirm();
-          });
-        }
+        if (quitConfirm) bindTapAction(quitConfirm, function () { confirmPetQuit(); });
+        if (quitCancel) bindTapAction(quitCancel, function () { cancelPetQuitConfirm(); });
+      }
+
+      function hardenSideChromePointerEvents() {
+        [
+          "chat-spark", "memo-btn", "food-btn", "game-btn",
+          "btn-pet-quit", "fav-star"
+        ].forEach(function (id) {
+          const el = document.getElementById(id);
+          if (!el) return;
+          try {
+            el.style.setProperty("pointer-events", "auto", "important");
+            el.style.setProperty("touch-action", "manipulation", "important");
+          } catch (_) {}
+        });
       }
 
       bindGifUi();
@@ -15524,6 +15630,7 @@
       bindUiThemeUi();
       bindGameCenterUi();
       bindPetQuitUi();
+      hardenSideChromePointerEvents();
       bindCfgModalUi();
       bindPersonaUi();
       bindLlmParamUi();
@@ -16636,6 +16743,7 @@
           el.closest("#news-brief-modal") ||
           el.closest("#clicker-modal") ||
           el.closest("#app-hub-modal") ||
+          el.closest("#eight-tail-short-video-root") ||
           el.closest("#food-btn") ||
           el.closest("#feed-tray-modal") ||
           el.closest("#game-btn") ||

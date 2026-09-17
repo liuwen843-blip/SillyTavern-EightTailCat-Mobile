@@ -1,4 +1,6 @@
-/* 酒馆宿主层（移动触屏版）：给气泡(上)与侧栏按钮(右下)留足空间，禁止裁切 */
+/* 酒馆宿主层（移动触屏版）：单例根容器 + 永久可见猫爪球 */
+
+#eight-tail-pet-mobile-root,
 #pet-container-mobile {
   position: fixed !important;
   left: 0 !important;
@@ -6,12 +8,10 @@
   right: auto !important;
   bottom: auto !important;
   z-index: 9999 !important;
-  /* 不可只包猫咪本体：需容纳上方气泡 + 右侧按钮列 */
   width: min(300px, 78vw) !important;
   height: min(400px, 72vh) !important;
   margin: 0 !important;
   padding: 0 !important;
-  /* 父层不拦截点击；由 iframe / 占位脸接收事件 */
   pointer-events: none !important;
   background: transparent !important;
   border: 0 !important;
@@ -25,22 +25,26 @@
   transition: none !important;
 }
 
+#eight-tail-pet-mobile-root.is-dragging,
 #pet-container-mobile.is-dragging {
   transition: none !important;
   will-change: transform;
 }
 
+#eight-tail-pet-mobile-root.eighttailcat-expanded,
 #pet-container-mobile.eighttailcat-expanded {
   width: min(96vw, 520px) !important;
   height: min(80vh, 720px) !important;
 }
 
+#eight-tail-pet-mobile-root.eighttailcat-hidden,
 #pet-container-mobile.eighttailcat-hidden {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
+#eight-tail-pet-mobile-root iframe,
 #pet-container-mobile iframe {
   position: relative;
   z-index: 1;
@@ -56,12 +60,14 @@
   overflow: visible !important;
 }
 
+#eight-tail-mobile-fallback,
 #eighttailcat-mobile-fallback {
   pointer-events: none !important;
   border: 0 !important;
   outline: none !important;
   background: transparent !important;
   box-shadow: none !important;
+  display: none !important;
 }
 
 #eighttailcat-mobile-settings {
@@ -82,7 +88,8 @@
   touch-action: manipulation;
 }
 
-/* 右缘贴边猫爪：始终可点，一键唤回 */
+/* 右缘贴边猫爪：永远可见，不随桌宠隐藏 */
+#eight-tail-mobile-toggle-btn,
 #eighttailcat-mobile-dock {
   position: fixed !important;
   right: 0 !important;
@@ -100,10 +107,11 @@
   color: #fff;
   font-size: 20px;
   line-height: 1;
-  display: flex;
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
   align-items: center;
   justify-content: center;
-  opacity: 0.85;
   cursor: grab;
   touch-action: none;
   pointer-events: auto !important;
@@ -111,24 +119,38 @@
   box-shadow:
     -3px 2px 10px rgba(0, 0, 0, 0.28),
     inset 1px 0 0 rgba(255, 255, 255, 0.12);
-  transition: opacity 0.15s ease, background 0.15s ease;
+  transition: background 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
 }
 
+#eight-tail-mobile-toggle-btn .etc-dock-paw,
 #eighttailcat-mobile-dock .etc-dock-paw {
   display: block;
   pointer-events: none;
   transform: translateX(1px);
 }
 
+#eight-tail-mobile-toggle-btn.is-collapsed,
 #eighttailcat-mobile-dock.is-collapsed {
-  opacity: 0.98;
   background: rgba(91, 141, 239, 0.88);
 }
 
+#eight-tail-mobile-toggle-btn.is-dragging,
 #eighttailcat-mobile-dock.is-dragging {
-  opacity: 1;
   cursor: grabbing;
   transition: none !important;
+}
+
+/* 短视频根节点由 short-video.js 注入样式；此处兜底确保永远盖住酒馆 */
+#eight-tail-short-video-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 99999 !important;
+  pointer-events: auto !important;
+}
+
+#eight-tail-sv-close {
+  z-index: 100002 !important;
+  pointer-events: auto !important;
 }
