@@ -6,11 +6,19 @@
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v9';
+const SV_STYLE_ID = 'eight-tail-sv-style-v10';
 const SV_OPEN_GUARD_MS = 550;
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode';
 const SV_YT_IDX_LS_KEY = 'eight_tail_short_video_yt_idx';
+const SV_SEARCH_LS_KEY = 'eight_tail_short_video_recent_search';
 const SV_SWIPE_PX = 48;
+
+const SV_QUICK_TAGS = [
+  { label: '🐱 萌宠', kw: 'cat shorts' },
+  { label: '🎧 ASMR', kw: 'asmr' },
+  { label: '🎮 游戏切片', kw: 'game highlights shorts' },
+  { label: '🔥 热门短片', kw: 'trending shorts' },
+];
 
 /** 精选公开、可嵌 Shorts / 短片（单视频 ID，非失效 Playlist） */
 const SV_YT_SHORTS = [
@@ -117,6 +125,8 @@ let svState = {
   adultIndex: 0,
   adultLoading: false,
   browseOpen: false,
+  searchOpen: false,
+  lastSearchKw: '',
 };
 
 function svIsEmbedMode(mode) {
@@ -160,6 +170,25 @@ function svYoutubeEmbedUrl(videoId) {
   } catch (_) {}
   return 'https://www.youtube-nocookie.com/embed/' + id +
     '?autoplay=1&playsinline=1&rel=0&modestbranding=1&enablejsapi=1&origin=' +
+    encodeURIComponent(currentOrigin);
+}
+
+function svGetPageOrigin() {
+  try {
+    if (window.location && window.location.origin && window.location.origin !== 'null') {
+      return window.location.origin;
+    }
+  } catch (_) {}
+  return 'http://127.0.0.1';
+}
+
+/** YouTube 官方 Embed Search 流（免 API Key） */
+function svYoutubeSearchEmbedUrl(keyword) {
+  const kw = String(keyword || '').trim();
+  const currentOrigin = svGetPageOrigin();
+  return 'https://www.youtube-nocookie.com/embed?listType=search&list=' +
+    encodeURIComponent(kw) +
+    '&autoplay=1&playsinline=1&enablejsapi=1&rel=0&origin=' +
     encodeURIComponent(currentOrigin);
 }
 
@@ -287,25 +316,32 @@ function svNormalizeAdultItems(source, data) {
   return out;
 }
 
-async function svLoadAdultCatalog() {
+async function svLoadAdultCatalog(searchKw) {
+  const kw = String(searchKw || '').trim();
   const merged = [];
-  /* Eporner 官方公开 API（优先，常可直连或走代理） */
+  const epUrl = kw
+    ? ('https://www.eporner.com/api/v2/video/search/?query=' + encodeURIComponent(kw) +
+      '&per_page=24&page=1&order=most-popular&thumbsize=big&format=json')
+    : SV_EPORNER_API;
+  const phUrl = kw
+    ? ('https://www.pornhub.com/webmasters/search?search=' + encodeURIComponent(kw) +
+      '&ordering=mostviewed&period=weekly&thumbsize=large')
+    : SV_PH_API;
+
   try {
-    const ep = await svFetchJsonViaProxies(SV_EPORNER_API);
+    const ep = await svFetchJsonViaProxies(epUrl);
     merged.push.apply(merged, svNormalizeAdultItems('eporner', ep));
   } catch (err) {
     console.warn('[EightTailCat] Eporner fail', err);
   }
-  /* Pornhub Webmaster 经代理 */
   try {
-    const ph = await svFetchJsonViaProxies(SV_PH_API);
+    const ph = await svFetchJsonViaProxies(phUrl);
     merged.push.apply(merged, svNormalizeAdultItems('pornhub', ph));
   } catch (err) {
     console.warn('[EightTailCat] Pornhub fail', err);
   }
 
-  if (!merged.length) {
-    /* 极简兜底：Eporner 热门页常见可嵌 ID 形态不可靠时，用二次 Eporner 搜索词 */
+  if (!merged.length && !kw) {
     try {
       const alt = await svFetchJsonViaProxies(
         'https://www.eporner.com/api/v2/video/search/?query=hot&per_page=12&page=1&format=json&thumbsize=big&order=most-popular'
@@ -326,7 +362,8 @@ function svEnsureStyle() {
     document.head.appendChild(style);
   }
   ['eight-tail-sv-style', 'eight-tail-sv-style-v4', 'eight-tail-sv-style-v5',
-    'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8'].forEach(function (id) {
+    'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8',
+    'eight-tail-sv-style-v9'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -350,12 +387,74 @@ function svEnsureStyle() {
   padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px 12px !important;
   background: linear-gradient(180deg, rgba(0,0,0,.55), transparent) !important;
 }
+#eight-tail-sv-search-toggle,
 #eight-tail-sv-close {
   width: 44px !important; height: 44px !important; border: 0 !important; border-radius: 50% !important;
-  background: rgba(239, 68, 68, .92) !important; color: #fff !important; font-size: 26px !important;
+  background: rgba(255,255,255,.22) !important; color: #fff !important; font-size: 20px !important;
   font-weight: 700 !important; display: flex !important; align-items: center !important;
   justify-content: center !important; cursor: pointer !important;
-  box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  box-shadow: 0 4px 14px rgba(0,0,0,.4); pointer-events: auto !important;
+  touch-action: manipulation !important; z-index: 100005 !important;
+}
+#eight-tail-sv-close {
+  background: rgba(239, 68, 68, .92) !important; font-size: 26px !important;
+}
+#eight-tail-sv-search-panel {
+  display: none !important;
+  position: absolute !important;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px)) !important;
+  left: 10px !important; right: 10px !important;
+  z-index: 100005 !important;
+  pointer-events: auto !important;
+  padding: 10px 12px 12px !important;
+  border-radius: 16px !important;
+  background: rgba(18, 18, 24, 0.78) !important;
+  backdrop-filter: blur(16px) saturate(1.2) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.2) !important;
+  box-shadow: 0 10px 28px rgba(0,0,0,.45) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  touch-action: manipulation !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+#eight-tail-short-video-root.search-open #eight-tail-sv-search-panel {
+  display: block !important;
+}
+#eight-tail-sv-search-row {
+  display: flex !important; gap: 8px !important; align-items: center !important;
+}
+#eight-tail-sv-search-input {
+  flex: 1 1 auto !important; min-width: 0 !important;
+  border: 1px solid rgba(255,255,255,.22) !important; border-radius: 12px !important;
+  background: rgba(255,255,255,.12) !important; color: #fff !important;
+  padding: 11px 12px !important; font-size: 14px !important; outline: none !important;
+  pointer-events: auto !important; touch-action: manipulation !important;
+  -webkit-user-select: text !important; user-select: text !important;
+  z-index: 100005 !important;
+}
+#eight-tail-sv-search-input::placeholder { color: rgba(255,255,255,.45); }
+#eight-tail-sv-search-go,
+#eight-tail-sv-search-collapse {
+  flex: 0 0 auto !important; border: 0 !important; border-radius: 12px !important;
+  padding: 10px 12px !important; font-size: 13px !important; font-weight: 800 !important;
+  cursor: pointer !important; pointer-events: auto !important; touch-action: manipulation !important;
+  z-index: 100005 !important; color: #fff !important;
+}
+#eight-tail-sv-search-go { background: #5b8def !important; }
+#eight-tail-sv-search-collapse { background: rgba(255,255,255,.14) !important; }
+#eight-tail-sv-search-tags {
+  display: flex !important; flex-wrap: wrap !important; gap: 8px !important; margin-top: 10px !important;
+  pointer-events: auto !important; z-index: 100005 !important;
+}
+.etc-sv-chip {
+  border: 0 !important; border-radius: 999px !important; padding: 6px 12px !important;
+  font-size: 12px !important; font-weight: 700 !important; cursor: pointer !important;
+  background: rgba(255,255,255,.14) !important; color: #fff !important;
+  pointer-events: auto !important; touch-action: manipulation !important;
+}
+.etc-sv-chip:active { transform: scale(0.96); }
+#eight-tail-sv-search-hint {
+  margin-top: 8px; font-size: 11px; opacity: .65; pointer-events: none !important;
 }
 #eight-tail-sv-apps {
   position: absolute !important; top: max(56px, calc(env(safe-area-inset-top) + 48px)) !important;
@@ -505,7 +604,7 @@ function svBuildDom() {
   svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '9') {
+  if (root && root.dataset.svVersion === '10') {
     svForceRootCss(root);
     return root;
   }
@@ -515,13 +614,24 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '9';
+  root.dataset.svVersion = '10';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = [
     '<div id="eight-tail-sv-toolbar">',
+    '  <button type="button" id="eight-tail-sv-search-toggle" title="搜索" aria-label="搜索">🔍</button>',
     '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭">×</button>',
+    '</div>',
+    '<div id="eight-tail-sv-search-panel" aria-label="多源搜索">',
+    '  <div id="eight-tail-sv-search-row">',
+    '    <input id="eight-tail-sv-search-input" type="search" enterkeyhint="search" autocomplete="off"',
+    '      placeholder="搜索关键词：cat shorts / anime / asmr…" />',
+    '    <button type="button" id="eight-tail-sv-search-go">搜索</button>',
+    '    <button type="button" id="eight-tail-sv-search-collapse">收起</button>',
+    '  </div>',
+    '  <div id="eight-tail-sv-search-tags" role="group" aria-label="快捷标签"></div>',
+    '  <div id="eight-tail-sv-search-hint">YouTube 搜关键词直接播 · Pornhub 搜出卡片列表</div>',
     '</div>',
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
@@ -553,12 +663,13 @@ function svBuildDom() {
     '    <div id="eight-tail-sv-author">@sample</div>',
     '    <div id="eight-tail-sv-title">短视频</div>',
     '  </div>',
-    '  <div id="eight-tail-sv-status-bar">上下滑切 · 点「下一条」换片</div>',
+    '  <div id="eight-tail-sv-status-bar">上下滑切 · 点「下一条」换片 · 🔍 可搜索</div>',
     '</div>',
   ].join('');
 
   document.body.appendChild(root);
   svForceRootCss(root);
+  svFillQuickTags(root);
   svBindUi(root);
   return root;
 }
@@ -582,10 +693,60 @@ function svEls(root) {
     author: root.querySelector('#eight-tail-sv-author'),
     title: root.querySelector('#eight-tail-sv-title'),
     close: root.querySelector('#eight-tail-sv-close'),
+    searchToggle: root.querySelector('#eight-tail-sv-search-toggle'),
+    searchPanel: root.querySelector('#eight-tail-sv-search-panel'),
+    searchInput: root.querySelector('#eight-tail-sv-search-input'),
+    searchGo: root.querySelector('#eight-tail-sv-search-go'),
+    searchCollapse: root.querySelector('#eight-tail-sv-search-collapse'),
+    searchTags: root.querySelector('#eight-tail-sv-search-tags'),
+    searchHint: root.querySelector('#eight-tail-sv-search-hint'),
     status: root.querySelector('#eight-tail-sv-status-bar'),
     stage: root.querySelector('#eight-tail-sv-stage'),
     apps: root.querySelector('#eight-tail-sv-apps'),
   };
+}
+
+function svFillQuickTags(root) {
+  const box = (root || svGetRoot()).querySelector('#eight-tail-sv-search-tags');
+  if (!box) return;
+  box.innerHTML = '';
+  SV_QUICK_TAGS.forEach(function (tag) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'etc-sv-chip';
+    b.dataset.kw = tag.kw;
+    b.textContent = tag.label;
+    box.appendChild(b);
+  });
+  /* 最近搜索胶囊 */
+  try {
+    const recent = JSON.parse(localStorage.getItem(SV_SEARCH_LS_KEY) || '[]');
+    if (Array.isArray(recent)) {
+      recent.slice(0, 4).forEach(function (kw) {
+        if (!kw) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'etc-sv-chip';
+        b.dataset.kw = kw;
+        b.textContent = '🕒 ' + String(kw).slice(0, 12);
+        box.appendChild(b);
+      });
+    }
+  } catch (_) {}
+}
+
+function svRememberSearch(kw) {
+  const q = String(kw || '').trim();
+  if (!q) return;
+  svState.lastSearchKw = q;
+  try {
+    let list = [];
+    try { list = JSON.parse(localStorage.getItem(SV_SEARCH_LS_KEY) || '[]'); } catch (_) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    list = [q].concat(list.filter(function (x) { return x !== q; })).slice(0, 8);
+    localStorage.setItem(SV_SEARCH_LS_KEY, JSON.stringify(list));
+  } catch (_) {}
+  svFillQuickTags(svGetRoot());
 }
 
 function svArmClickGuard() {
@@ -633,17 +794,88 @@ function svSetBrowseOpen(on) {
   if (root) root.classList.toggle('browse-open', svState.browseOpen);
 }
 
+function svSetSearchOpen(on) {
+  svState.searchOpen = !!on;
+  const root = svGetRoot();
+  const els = svEls(root);
+  if (root) root.classList.toggle('search-open', svState.searchOpen);
+  if (svState.searchOpen) {
+    svFillQuickTags(root);
+    setTimeout(function () {
+      try {
+        if (els.searchInput) {
+          els.searchInput.focus();
+          els.searchInput.select();
+        }
+      } catch (_) {}
+    }, 40);
+  }
+}
+
+function svPlayYoutubeSearch(keyword) {
+  const kw = String(keyword || '').trim();
+  if (!kw) {
+    svShowHint('请输入关键词');
+    return;
+  }
+  svRememberSearch(kw);
+  svMarkAppActive('youtube');
+  svSetBrowseOpen(false);
+  svSetEmbedSrc(svYoutubeSearchEmbedUrl(kw), 'youtube', 'search:' + kw);
+  svShowHint('搜：' + kw);
+  svSetStatus('YouTube 搜索流 · ' + kw);
+  svSetSearchOpen(false);
+}
+
+async function svSearchAdult(keyword) {
+  const kw = String(keyword || '').trim();
+  if (!kw) {
+    svShowHint('请输入关键词');
+    return;
+  }
+  svRememberSearch(kw);
+  await svOpenAdultBrowse(true, kw);
+  svSetSearchOpen(false);
+}
+
+async function svRunSearch(rawKw) {
+  const els = svEls();
+  const kw = String(rawKw != null ? rawKw : (els.searchInput && els.searchInput.value) || '').trim();
+  if (!kw) {
+    svShowHint('请输入关键词');
+    try { if (els.searchInput) els.searchInput.focus(); } catch (_) {}
+    return;
+  }
+  if (els.searchInput) els.searchInput.value = kw;
+
+  /* 按当前模式；默认 YouTube */
+  if (svState.mode === 'adult' || (els.root && els.root.querySelector('.etc-sv-app[data-app="pornhub"].is-on'))) {
+    await svSearchAdult(kw);
+    return;
+  }
+  /* native 等非成人模式 → YouTube 搜索流 */
+  if (svState.mode !== 'youtube') {
+    svMarkAppActive('youtube');
+  }
+  svPlayYoutubeSearch(kw);
+}
+
 function svUpdateChrome() {
   const item = svCurrent();
   const els = svEls();
   if (!els.root) return;
 
   if (svState.mode === 'youtube') {
-    const yt = SV_YT_SHORTS[svState.ytIndex] || SV_YT_SHORTS[0];
-    if (els.author) els.author.textContent = '@YouTube Shorts';
+    const isSearch = String(svState.embedId || '').indexOf('search:') === 0;
+    if (els.author) els.author.textContent = '@YouTube' + (isSearch ? ' 搜索' : ' Shorts');
     if (els.title) {
-      els.title.textContent = (yt ? yt.title : 'Shorts') +
-        ' · ' + (svState.ytIndex + 1) + '/' + SV_YT_SHORTS.length;
+      if (isSearch) {
+        els.title.textContent = '关键词 · ' + String(svState.embedId).slice(7);
+      } else {
+        const yt = SV_YT_SHORTS[svState.ytIndex] || SV_YT_SHORTS[0];
+        els.title.textContent = (yt ? yt.title : 'Shorts') +
+          ' · ' + (svState.ytIndex + 1) + '/' + SV_YT_SHORTS.length;
+      }
     }
   } else if (svState.mode === 'adult') {
     const a = svState.adultList[svState.adultIndex];
@@ -865,11 +1097,12 @@ function svPlayAdultAt(index) {
   svSetStatus((item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 上下滑切 · 列表可返回');
 }
 
-async function svOpenAdultBrowse(forceReload) {
+async function svOpenAdultBrowse(forceReload, searchKw) {
   if (svState.adultLoading) {
     svShowHint('加载中…');
     return;
   }
+  const kw = String(searchKw != null ? searchKw : '').trim();
   svMarkAppActive('pornhub');
   svSetBrowseOpen(true);
   svPauseNativeVideo();
@@ -878,8 +1111,10 @@ async function svOpenAdultBrowse(forceReload) {
   svWriteMode('adult');
 
   const els = svEls();
-  if (els.browseTitle) els.browseTitle.textContent = '热门片源加载中…';
-  if (!forceReload && svState.adultList.length) {
+  const titlePrefix = kw ? ('搜索「' + kw + '」') : '热门片源';
+  if (els.browseTitle) els.browseTitle.textContent = titlePrefix + '加载中…';
+
+  if (!forceReload && !kw && svState.adultList.length) {
     if (els.browseTitle) els.browseTitle.textContent = '热门片源 · ' + svState.adultList.length;
     svRenderAdultCards(svState.adultList);
     svShowHint('选择影片');
@@ -887,16 +1122,16 @@ async function svOpenAdultBrowse(forceReload) {
   }
 
   svState.adultLoading = true;
-  svShowHint('代理拉取中…');
-  svSetStatus('三重代理穿透 · Eporner / Pornhub');
+  svShowHint(kw ? '搜索中…' : '代理拉取中…');
+  svSetStatus(kw ? ('搜索 · ' + kw) : '三重代理穿透 · Eporner / Pornhub');
   try {
-    const list = await svLoadAdultCatalog();
+    const list = await svLoadAdultCatalog(kw);
     svState.adultList = list;
     svState.adultIndex = 0;
     if (els.browseTitle) {
       els.browseTitle.textContent = list.length
-        ? ('热门片源 · ' + list.length + ' 部')
-        : '暂无结果';
+        ? (titlePrefix + ' · ' + list.length + ' 部')
+        : (titlePrefix + ' · 暂无结果');
     }
     svRenderAdultCards(list);
     svShowHint(list.length ? '点封面播放' : '无结果');
@@ -1057,7 +1292,11 @@ function svIsInteractiveTarget(el) {
     el.closest('#eight-tail-sv-apps') ||
     el.closest('#eight-tail-sv-rail') ||
     el.closest('#eight-tail-sv-browse') ||
+    el.closest('#eight-tail-sv-search-panel') ||
+    el.closest('#eight-tail-sv-search-toggle') ||
     el.closest('button') ||
+    el.closest('input') ||
+    el.closest('textarea') ||
     el.closest('a')
   );
 }
@@ -1076,6 +1315,59 @@ function svBindUi(root) {
       e.preventDefault();
       stopBubble(e);
       closeShortVideoPlayer();
+    });
+  }
+  if (els.searchToggle) {
+    els.searchToggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svSetSearchOpen(!svState.searchOpen);
+    });
+  }
+  if (els.searchCollapse) {
+    els.searchCollapse.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svSetSearchOpen(false);
+    });
+  }
+  if (els.searchGo) {
+    els.searchGo.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svRunSearch();
+    });
+  }
+  if (els.searchInput) {
+    els.searchInput.addEventListener('keydown', function (e) {
+      stopBubble(e);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        svRunSearch();
+      }
+    });
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove'].forEach(function (evName) {
+      els.searchInput.addEventListener(evName, function (e) {
+        stopBubble(e);
+      }, { passive: true });
+    });
+  }
+  if (els.searchPanel) {
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'click'].forEach(function (evName) {
+      els.searchPanel.addEventListener(evName, function (e) {
+        stopBubble(e);
+      }, { passive: true });
+    });
+  }
+  if (els.searchTags) {
+    els.searchTags.addEventListener('click', function (e) {
+      const chip = e.target && e.target.closest ? e.target.closest('.etc-sv-chip') : null;
+      if (!chip) return;
+      e.preventDefault();
+      stopBubble(e);
+      const kw = chip.getAttribute('data-kw') || '';
+      if (els.searchInput) els.searchInput.value = kw;
+      svRunSearch(kw);
     });
   }
   if (els.like) {
@@ -1111,7 +1403,7 @@ function svBindUi(root) {
     els.browseRefresh.addEventListener('click', function (e) {
       e.preventDefault();
       stopBubble(e);
-      svOpenAdultBrowse(true);
+      svOpenAdultBrowse(true, svState.lastSearchKw || '');
     });
   }
   if (els.cards) {
@@ -1137,7 +1429,7 @@ function svBindUi(root) {
   const stage = els.stage;
   if (stage) {
     stage.addEventListener('touchstart', function (e) {
-      if (svIsInteractiveTarget(e.target)) return;
+      if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (!e.touches || !e.touches.length) return;
       svState.moved = false;
       svState.startY = e.touches[0].clientY;
@@ -1145,7 +1437,7 @@ function svBindUi(root) {
     }, { passive: true });
 
     stage.addEventListener('touchmove', function (e) {
-      if (svIsInteractiveTarget(e.target)) return;
+      if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       if (!e.touches || !e.touches.length) return;
       const dy = e.touches[0].clientY - svState.startY;
@@ -1157,7 +1449,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('touchend', function (e) {
-      if (svIsInteractiveTarget(e.target)) return;
+      if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
       if (!t) return;
@@ -1251,6 +1543,7 @@ export function closeShortVideoPlayer() {
   }
   svClearEmbedFrame();
   svSetBrowseOpen(false);
+  svSetSearchOpen(false);
   if (root) {
     root.classList.remove('is-open');
     root.setAttribute('aria-hidden', 'true');
