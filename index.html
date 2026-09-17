@@ -25,6 +25,18 @@
       }
     })();
   </script>
+  <!-- 酒馆 iframe：由 index.js 挂载 -->
+  <script>
+    (function () {
+      try {
+        if (window.parent && window.parent !== window && window.parent.SillyTavern) {
+          window.__PET_ST_MODE__ = true;
+          window.SillyTavern = window.parent.SillyTavern;
+          document.documentElement.classList.add("st-extension-host");
+        }
+      } catch (_) {}
+    })();
+  </script>
   <!-- 由 main.py 本地 HTTP 注入：__PET_FS_ROOT__ / __PET_HTTP_BASE__ -->
   <script src="/__pet_runtime.js"></script>
   <style>
@@ -179,14 +191,37 @@
     /* ---------- 宠物（移动触屏版：约原尺寸 70%，默认偏右下） ---------- */
     #pet {
       position: absolute;
-      left: 72%;
-      top: 78%;
-      width: min(238px, 50vw);
+      left: 50%;
+      top: 58%;
+      width: min(238px, 78%);
       transform: translate(-50%, -50%);
       z-index: 10;
       touch-action: none;
       -webkit-touch-callout: none;
       overflow: visible;
+      will-change: left, top, transform;
+    }
+    #pet.dragging {
+      transition: none !important;
+      animation: none !important;
+      will-change: left, top, transform;
+    }
+    html.st-extension-host #pet {
+      left: 50%;
+      top: 55%;
+      width: min(238px, 82%);
+    }
+    html.st-extension-host,
+    html.st-extension-host body {
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      background: transparent !important;
+    }
+    html.st-extension-host #stage {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      overscroll-behavior: none;
     }
 
 
@@ -901,29 +936,26 @@
       width: 36px;
       height: 36px;
       border: none;
-      border-radius: 50%;
+      border-radius: 12px;
       z-index: 130;
       pointer-events: auto !important;
-      cursor: grab;
+      cursor: pointer;
       font-size: 17px;
       line-height: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #3d4a5c;
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(230, 240, 255, 0.78));
-      box-shadow: 0 6px 16px rgba(40, 60, 90, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.75) inset;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      transition: transform 0.15s ease, box-shadow 0.2s ease;
-      touch-action: none;
-      animation: capsuleBreathe 3.2s ease-in-out infinite;
+      color: #fff;
+      background: linear-gradient(145deg, #3b82f6, #1d4ed8);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+      transition: none;
+      touch-action: manipulation;
+      animation: none;
     }
-    #memo-btn:hover { transform: scale(1.08); }
-    #memo-btn:active { cursor: grabbing; }
+    #memo-btn:hover { transform: scale(1.06); }
+    #memo-btn:active { transform: scale(0.96); }
     #memo-btn.loading {
       animation: capsuleSpin 0.9s linear infinite;
-      box-shadow: 0 0 18px 4px rgba(91, 141, 239, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
     }
     #memo-btn.has-todo::after {
       content: "";
@@ -3660,7 +3692,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" title="应用中心：抖音 / 小红书 / Discord" aria-label="应用中心">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="应用中心" aria-label="应用中心">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -16279,10 +16311,38 @@
         }
       }
 
+      function notifyStHost(payload) {
+        if (!window.__PET_ST_MODE__) return;
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, "*");
+          }
+        } catch (_) {}
+      }
+
+      function clampPetCenter(x, y) {
+        const petW = pet.offsetWidth || 238;
+        const petH = pet.offsetHeight || 238;
+        const winW = window.innerWidth || document.documentElement.clientWidth || petW;
+        const winH = window.innerHeight || document.documentElement.clientHeight || petH;
+        const topSafe = 50;
+        /* 中心点坐标：等价左上角 [0, W-petW] × [topSafe, H-petH] */
+        const minX = petW / 2;
+        const maxX = Math.max(minX, winW - petW / 2);
+        const minY = topSafe + petH / 2;
+        const maxY = Math.max(minY, winH - petH / 2);
+        return {
+          x: Math.min(maxX, Math.max(minX, Number(x) || 0)),
+          y: Math.min(maxY, Math.max(minY, Number(y) || 0))
+        };
+      }
+
       function placeAt(x, y, biting) {
-        pet.style.left = x + "px";
-        pet.style.top = y + "px";
-        pet.style.transform = biting ? "translate(-48%, -58%)" : "translate(-50%, -50%)";
+        const p = clampPetCenter(x, y);
+        pet.style.transition = "none";
+        pet.style.left = p.x + "px";
+        pet.style.top = p.y + "px";
+        pet.style.transform = biting ? "translate3d(-48%, -58%, 0)" : "translate3d(-50%, -50%, 0)";
       }
 
       function getCenter() {
@@ -16578,24 +16638,15 @@
         if (bubble.classList.contains("hover-tip")) hideBubble();
       });
 
-      function eventPoint(e) {
-        if (e.touches && e.touches.length) {
-          const t = e.touches[0];
-          return { x: t.clientX, y: t.clientY };
-        }
-        if (e.changedTouches && e.changedTouches.length) {
-          const t = e.changedTouches[0];
-          return { x: t.clientX, y: t.clientY };
-        }
-        return { x: e.clientX, y: e.clientY };
-      }
-
-      let lastTouchTime = 0;
-      let petTapTimer = null;
+      let clickTimer = null;
+      let awaitingSecondClick = false;
+      let lastTapPoint = { x: 0, y: 0 };
       let touchStartX = 0;
       let touchStartY = 0;
       let touchMoved = false;
       let petGestureActive = false;
+      let hostDragRaf = 0;
+      let hostDragPoint = null;
 
       function handlePetSingleTap(point) {
         if (state === THROWING) return;
@@ -16616,23 +16667,60 @@
       }
 
       function resolvePetTap(point) {
-        const now = Date.now();
-        const timeDiff = now - lastTouchTime;
-        if (timeDiff < 300 && timeDiff > 0) {
-          lastTouchTime = 0;
-          if (petTapTimer) { clearTimeout(petTapTimer); petTapTimer = null; }
+        lastTapPoint = point || lastTapPoint;
+        if (awaitingSecondClick && clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          awaitingSecondClick = false;
           handlePetDoubleTap();
           return;
         }
-        lastTouchTime = now;
-        if (petTapTimer) clearTimeout(petTapTimer);
-        petTapTimer = setTimeout(function () {
-          petTapTimer = null;
-          if (Date.now() - lastTouchTime >= 280 && lastTouchTime !== 0) {
-            lastTouchTime = 0;
-            handlePetSingleTap(point);
-          }
-        }, 300);
+        awaitingSecondClick = true;
+        if (clickTimer) clearTimeout(clickTimer);
+        clickTimer = setTimeout(function () {
+          clickTimer = null;
+          awaitingSecondClick = false;
+          handlePetSingleTap(lastTapPoint);
+        }, 280);
+      }
+
+      function flushHostDrag() {
+        hostDragRaf = 0;
+        if (!hostDragPoint) return;
+        notifyStHost({
+          type: "eighttailcat-drag-move",
+          clientX: hostDragPoint.x,
+          clientY: hostDragPoint.y,
+          screenX: hostDragPoint.sx,
+          screenY: hostDragPoint.sy
+        });
+      }
+
+      function eventPoint(e) {
+        if (e.touches && e.touches.length) {
+          const t = e.touches[0];
+          return {
+            x: t.clientX,
+            y: t.clientY,
+            sx: t.screenX != null ? t.screenX : t.clientX,
+            sy: t.screenY != null ? t.screenY : t.clientY
+          };
+        }
+        if (e.changedTouches && e.changedTouches.length) {
+          const t = e.changedTouches[0];
+          return {
+            x: t.clientX,
+            y: t.clientY,
+            sx: t.screenX != null ? t.screenX : t.clientX,
+            sy: t.screenY != null ? t.screenY : t.clientY
+          };
+        }
+        return {
+          x: e.clientX,
+          y: e.clientY,
+          sx: e.screenX != null ? e.screenX : e.clientX,
+          sy: e.screenY != null ? e.screenY : e.clientY
+        };
       }
 
       function beginPetDrag(e, point) {
@@ -16655,33 +16743,59 @@
       function movePetDrag(point) {
         if (!petGestureActive) return;
         if (state === BITING) {
-          placeAt(point.x, point.y, true);
+          if (!window.__PET_ST_MODE__) placeAt(point.x, point.y, true);
           updateShakeFromSpeed(point.x, point.y);
           return;
         }
         const dx = Math.abs(point.x - touchStartX);
         const dy = Math.abs(point.y - touchStartY);
-        if (!touchMoved && (dx > 5 || dy > 5)) {
+        if (!touchMoved && (dx > 8 || dy > 8)) {
           touchMoved = true;
           dragging = true;
           dragMoved = true;
+          if (awaitingSecondClick || clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            awaitingSecondClick = false;
+          }
           pet.classList.add("dragging");
           pet.classList.remove("floating");
+          pet.style.transition = "none";
+          pet.style.animation = "none";
           markActivity();
           triggerClickedVisual();
-          placeAt(originX, originY, false);
+          if (window.__PET_ST_MODE__) {
+            notifyStHost({
+              type: "eighttailcat-drag-start",
+              clientX: point.x,
+              clientY: point.y,
+              screenX: point.sx,
+              screenY: point.sy
+            });
+          } else {
+            placeAt(originX, originY, false);
+          }
         }
         if (!dragging || state !== IDLE) return;
+        if (window.__PET_ST_MODE__) {
+          hostDragPoint = point;
+          if (!hostDragRaf) hostDragRaf = requestAnimationFrame(flushHostDrag);
+          return;
+        }
         placeAt(originX + (point.x - startX), originY + (point.y - startY), false);
       }
 
       function endPetDrag(point, pointerId) {
         const wasGesture = petGestureActive;
         const wasSlide = touchMoved || dragMoved;
-        const wasDragging = dragging;
         petGestureActive = false;
         if (pointerId != null) {
           try { pet.releasePointerCapture(pointerId); } catch (_) {}
+        }
+        if (hostDragRaf) {
+          cancelAnimationFrame(hostDragRaf);
+          hostDragRaf = 0;
+          flushHostDrag();
         }
         if (state === BITING) {
           dragging = false;
@@ -16689,9 +16803,13 @@
           touchMoved = false;
           return;
         }
-        if (wasDragging || wasSlide) {
+        if (wasSlide) {
+          if (window.__PET_ST_MODE__) {
+            notifyStHost({ type: "eighttailcat-drag-end" });
+          }
           pet.classList.remove("dragging");
           pet.classList.add("floating");
+          pet.style.animation = "";
           hideBubble();
           dragging = false;
           dragMoved = false;
@@ -16701,6 +16819,7 @@
         dragging = false;
         dragMoved = false;
         touchMoved = false;
+        pet.classList.remove("dragging");
         if (wasGesture && state === IDLE) {
           resolvePetTap(point || { x: startX, y: startY });
         }
@@ -16769,7 +16888,7 @@
       window.addEventListener("pointermove", function (e) {
         if (e.pointerType === "touch") return;
         if (state !== BITING) return;
-        placeAt(e.clientX, e.clientY, true);
+        if (!window.__PET_ST_MODE__) placeAt(e.clientX, e.clientY, true);
         updateShakeFromSpeed(e.clientX, e.clientY);
       });
 
@@ -16778,7 +16897,7 @@
         if (!e.touches || !e.touches.length) return;
         e.preventDefault();
         const p = eventPoint(e);
-        placeAt(p.x, p.y, true);
+        if (!window.__PET_ST_MODE__) placeAt(p.x, p.y, true);
         updateShakeFromSpeed(p.x, p.y);
       }, { passive: false });
 
@@ -16833,6 +16952,16 @@
           closeSettings();
         }
       });
+
+
+      if (window.__PET_ST_MODE__) {
+        document.documentElement.classList.add("st-extension-host");
+        window.addEventListener("message", function (ev) {
+          const data = ev && ev.data;
+          if (!data || data.type !== "eighttailcat-open-settings") return;
+          try { openSettings(); } catch (_) {}
+        });
+      }
 
       window.openSettings = openSettings;
       window.closeSettings = closeSettings;

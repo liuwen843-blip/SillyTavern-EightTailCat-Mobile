@@ -25,17 +25,20 @@
       }
     })();
   </script>
-  <!-- 酒馆 iframe：由 index.js 挂载；桌宠独立运行时仍可忽略本脚本 -->
+  <!-- 酒馆 iframe：由 index.js 挂载 -->
   <script>
     (function () {
       try {
         if (window.parent && window.parent !== window && window.parent.SillyTavern) {
           window.__PET_ST_MODE__ = true;
           window.SillyTavern = window.parent.SillyTavern;
+          document.documentElement.classList.add("st-extension-host");
         }
       } catch (_) {}
     })();
   </script>
+  <!-- 由 main.py 本地 HTTP 注入：__PET_FS_ROOT__ / __PET_HTTP_BASE__ -->
+  <script src="/__pet_runtime.js"></script>
   <style>
     :root {
       /* 语义主题变量（可被 theme-* class 覆盖） */
@@ -170,14 +173,6 @@
       -webkit-user-select: none;
     }
 
-    html.st-extension-host,
-    html.st-extension-host body {
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: transparent !important;
-    }
-
     body.hiding-cursor,
     body.hiding-cursor * { cursor: none !important; }
 
@@ -193,38 +188,40 @@
       height: 100%;
     }
 
-    html.st-extension-host #stage {
-      width: 100%;
-      height: 100%;
-      overscroll-behavior: none;
-      touch-action: none;
-    }
-
-    html.st-extension-host,
-    html.st-extension-host body {
-      overscroll-behavior: none;
-      -webkit-text-size-adjust: 100%;
-    }
-
-    /* ---------- 宠物（移动触屏版：约原尺寸 70%） ---------- */
+    /* ---------- 宠物（移动触屏版：约原尺寸 70%，默认偏右下） ---------- */
     #pet {
       position: absolute;
-      left: 72%;
-      top: 78%;
-      width: min(238px, 50vw);
+      left: 50%;
+      top: 58%;
+      width: min(238px, 78%);
       transform: translate(-50%, -50%);
       z-index: 10;
       touch-action: none;
       -webkit-touch-callout: none;
       overflow: visible;
+      will-change: left, top, transform;
     }
-
+    #pet.dragging {
+      transition: none !important;
+      animation: none !important;
+      will-change: left, top, transform;
+    }
     html.st-extension-host #pet {
-      position: absolute;
       left: 50%;
-      top: 58%;
-      width: min(238px, 78%);
-      z-index: 10;
+      top: 55%;
+      width: min(238px, 82%);
+    }
+    html.st-extension-host,
+    html.st-extension-host body {
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      background: transparent !important;
+    }
+    html.st-extension-host #stage {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      overscroll-behavior: none;
     }
 
 
@@ -491,20 +488,34 @@
     .cfg-modal {
       position: fixed;
       inset: 0;
-      z-index: 100001 !important;
-      display: flex;
+      z-index: 2147483000 !important;
+      display: none;
       align-items: center;
       justify-content: center;
-      background: rgba(20, 28, 40, 0.42);
+      background: rgba(20, 28, 40, 0.52);
       padding: 16px;
       pointer-events: auto !important;
+      visibility: hidden;
+      opacity: 0;
     }
-    .cfg-modal[hidden] { display: none !important; }
-    body.settings-window .cfg-modal {
-      z-index: 100001 !important;
+    .cfg-modal[hidden],
+    .cfg-modal:not(.is-open) {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+    .cfg-modal.is-open {
+      display: flex !important;
+      visibility: visible !important;
+      opacity: 1 !important;
       pointer-events: auto !important;
     }
-      .cfg-modal-card {
+    body.settings-window .cfg-modal.is-open {
+      z-index: 2147483000 !important;
+      pointer-events: auto !important;
+    }
+    .cfg-modal-card {
       width: min(360px, 92vw);
       background: var(--glass-strong);
       color: var(--text-main);
@@ -925,29 +936,26 @@
       width: 36px;
       height: 36px;
       border: none;
-      border-radius: 50%;
+      border-radius: 12px;
       z-index: 130;
       pointer-events: auto !important;
-      cursor: grab;
+      cursor: pointer;
       font-size: 17px;
       line-height: 1;
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #3d4a5c;
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(230, 240, 255, 0.78));
-      box-shadow: 0 6px 16px rgba(40, 60, 90, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.75) inset;
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      transition: transform 0.15s ease, box-shadow 0.2s ease;
-      touch-action: none;
-      animation: capsuleBreathe 3.2s ease-in-out infinite;
+      color: #fff;
+      background: linear-gradient(145deg, #3b82f6, #1d4ed8);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+      transition: none;
+      touch-action: manipulation;
+      animation: none;
     }
-    #memo-btn:hover { transform: scale(1.08); }
-    #memo-btn:active { cursor: grabbing; }
+    #memo-btn:hover { transform: scale(1.06); }
+    #memo-btn:active { transform: scale(0.96); }
     #memo-btn.loading {
       animation: capsuleSpin 0.9s linear infinite;
-      box-shadow: 0 0 18px 4px rgba(91, 141, 239, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.8) inset;
     }
     #memo-btn.has-todo::after {
       content: "";
@@ -1298,34 +1306,216 @@
       box-shadow: 0 6px 16px rgba(40, 60, 90, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.7) inset !important;
     }
 
-    #game-modal,
-    .game-modal {
+    /* ===== 移动端全屏视图 & 安全关闭键 ===== */
+    .mobile-fullscreen-view {
       position: fixed !important;
-      left: 24px;
-      right: auto !important;
-      top: 10%;
-      bottom: auto !important;
-      transform: none !important;
-      margin: 0 !important;
-      touch-action: none;
-      width: 280px !important;
-      max-width: min(280px, 86vw) !important;
-      max-height: min(420px, 62vh) !important;
+      inset: 0 !important;
+      left: 0 !important;
+      top: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100dvh !important;
+      max-width: none !important;
+      max-height: none !important;
+      z-index: 99999 !important;
       box-sizing: border-box !important;
       display: none;
       flex-direction: column;
-      padding: 8px 12px 10px !important;
-      background: rgba(255, 255, 255, 0.78) !important;
-      backdrop-filter: blur(12px) !important;
-      -webkit-backdrop-filter: blur(12px) !important;
-      border: 1px solid rgba(255, 255, 255, 0.4) !important;
-      border-radius: 14px !important;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
-      z-index: 9999 !important;
+      overflow: hidden !important;
+      background: rgba(20, 20, 25, 0.96) !important;
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px) !important;
+      border-radius: 0 !important;
+      transform: none !important;
+      margin: 0 !important;
+      opacity: 0;
+      pointer-events: none;
+      touch-action: manipulation;
+    }
+    .mobile-fullscreen-view.open {
+      display: flex !important;
+      opacity: 1 !important;
+      pointer-events: auto !important;
+    }
+
+    .mobile-safe-close-btn {
+      position: fixed !important;
+      top: max(16px, env(safe-area-inset-top, 0px)) !important;
+      right: 16px !important;
+      width: 40px !important;
+      height: 40px !important;
+      border-radius: 50% !important;
+      background: rgba(0, 0, 0, 0.72) !important;
+      color: #fff !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      font-size: 20px !important;
+      line-height: 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      z-index: 100000 !important;
+      cursor: pointer !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    .mobile-safe-close-btn:active {
+      transform: scale(0.94);
+      background: rgba(220, 38, 38, 0.85) !important;
+    }
+
+    #app-hub-modal {
+      color: #f8fafc;
+    }
+    #app-hub-modal .app-hub-inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 56px 16px 16px;
+      box-sizing: border-box;
+    }
+    #app-hub-modal .app-hub-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin: 0 0 6px;
+      letter-spacing: 0.02em;
+    }
+    #app-hub-modal .app-hub-sub {
+      font-size: 12px;
+      color: rgba(248, 250, 252, 0.65);
+      margin: 0 0 18px;
+    }
+    #app-hub-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    .app-hub-icon {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      padding: 16px 8px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      touch-action: manipulation;
+      min-height: 96px;
+    }
+    .app-hub-icon:active {
+      transform: scale(0.96);
+      background: rgba(255, 255, 255, 0.16);
+    }
+    .app-hub-icon .app-emoji {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .app-hub-icon .app-name {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    #app-hub-stage {
+      flex: 1;
+      min-height: 0;
+      display: none;
+      flex-direction: column;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: #0b0f14;
+    }
+    #app-hub-stage.active {
+      display: flex;
+    }
+    #app-hub-stage-bar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    #app-hub-stage-bar .app-stage-title {
+      flex: 1;
+      font-size: 13px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #app-hub-stage-bar button {
+      appearance: none;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      min-height: 34px;
+      touch-action: manipulation;
+    }
+    #app-hub-frame {
+      flex: 1;
+      width: 100%;
+      border: 0;
+      background: #fff;
+      min-height: 0;
+    }
+    #app-hub-fallback {
+      display: none;
+      padding: 20px 16px;
+      color: rgba(248, 250, 252, 0.8);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    #app-hub-fallback.show { display: block; }
+
+    #game-modal,
+    .game-modal {
+      position: fixed !important;
+      inset: 0 !important;
+      left: 0 !important;
+      top: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      transform: none !important;
+      margin: 0 !important;
+      touch-action: manipulation;
+      width: 100vw !important;
+      height: 100dvh !important;
+      max-width: none !important;
+      max-height: none !important;
+      box-sizing: border-box !important;
+      display: none;
+      flex-direction: column;
+      padding: max(48px, calc(env(safe-area-inset-top, 0px) + 40px)) 12px max(12px, env(safe-area-inset-bottom, 0px)) 12px !important;
+      background: rgba(20, 20, 25, 0.96) !important;
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+      border: 0 !important;
+      border-radius: 0 !important;
+      box-shadow: none !important;
+      z-index: 99999 !important;
       opacity: 0;
       overflow: hidden !important;
       pointer-events: none;
-      transition: opacity 0.18s ease;
+      color: #f8fafc !important;
     }
     #game-modal.open,
     .game-modal.open {
@@ -1346,24 +1536,20 @@
       align-items: center;
       justify-content: center;
       gap: 4px;
-      padding: 4px 32px 8px 4px;
-      margin: 0 -2px 0;
+      padding: 4px 48px 10px 4px;
+      margin: 0;
       flex-shrink: 0;
-      cursor: move;
-      touch-action: none;
+      cursor: default;
+      touch-action: manipulation;
       user-select: none;
-      border-bottom: 1px solid rgba(42, 51, 64, 0.06);
-      color: #1e293b;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      color: #f8fafc;
     }
     #game-modal .game-drag-grip {
-      width: 36px;
-      height: 4px;
-      border-radius: 999px;
-      background: rgba(100, 116, 139, 0.35);
-      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65);
+      display: none;
     }
     #game-modal .game-drag-title {
-      font-size: 12px;
+      font-size: 15px;
       font-weight: 700;
       letter-spacing: 0.02em;
       line-height: 1.2;
@@ -1373,40 +1559,46 @@
       position: relative;
       display: flex;
       align-items: center;
-      padding: 2px 32px 6px 2px;
+      padding: 2px 48px 6px 2px;
       font-size: 12px;
       font-weight: 700;
-      border-bottom: 1px solid rgba(42, 51, 64, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
       flex-shrink: 0;
-      color: #1e293b;
+      color: #f8fafc;
     }
     #game-close,
     #game-modal .game-close-btn,
-    #game-modal .close-btn {
-      position: absolute !important;
-      top: 8px !important;
-      right: 8px !important;
-      width: 24px !important;
-      height: 24px !important;
-      line-height: 22px !important;
+    #game-modal .close-btn,
+    #game-close.mobile-safe-close-btn {
+      position: fixed !important;
+      top: max(16px, env(safe-area-inset-top, 0px)) !important;
+      right: 16px !important;
+      left: auto !important;
+      width: 40px !important;
+      height: 40px !important;
+      line-height: 1 !important;
       text-align: center !important;
       border-radius: 50% !important;
-      background: rgba(0, 0, 0, 0.08) !important;
-      color: #64748b !important;
-      font-size: 14px !important;
+      background: rgba(0, 0, 0, 0.72) !important;
+      color: #fff !important;
+      border: 1px solid rgba(255, 255, 255, 0.35) !important;
+      font-size: 20px !important;
       cursor: pointer !important;
       user-select: none !important;
-      z-index: 10001 !important;
+      z-index: 100000 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+      touch-action: manipulation;
       outline: none !important;
-      border: none !important;
       padding: 0 !important;
-      box-shadow: none !important;
     }
     #game-close:hover,
     #game-modal .game-close-btn:hover,
     #game-modal .close-btn:hover {
-      background: rgba(239, 68, 68, 0.15) !important;
-      color: #ef4444 !important;
+      background: rgba(220, 38, 38, 0.85) !important;
+      color: #fff !important;
     }
     #game-tabs {
       display: none !important;
@@ -1414,8 +1606,10 @@
     #game-lobby {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      padding: 8px 0 2px;
+      gap: 10px;
+      padding: 10px 0 4px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     #game-modal.in-game #game-lobby {
       display: none !important;
@@ -1431,19 +1625,21 @@
     }
     .game-card {
       border: none !important;
-      border-radius: 12px;
-      padding: 12px 8px;
-      background: rgba(255, 255, 255, 0.72);
-      box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 4px 12px rgba(15, 23, 42, 0.06);
+      border-radius: 14px;
+      padding: 16px 10px;
+      background: rgba(255, 255, 255, 0.12);
+      box-shadow: none;
       cursor: pointer;
       text-align: center;
       outline: none !important;
-      color: #1e293b;
+      color: #f8fafc;
       transition: transform 0.12s ease, background 0.12s ease;
+      min-height: 96px;
+      touch-action: manipulation;
     }
     .game-card:hover {
       transform: translateY(-1px);
-      background: rgba(255, 255, 255, 0.92);
+      background: rgba(255, 255, 255, 0.2);
     }
     .game-card .game-card-icon {
       font-size: 32px !important;
@@ -1464,39 +1660,42 @@
       pointer-events: none;
     }
     #game-back {
-      position: absolute !important;
-      top: 8px !important;
-      left: 8px !important;
-      height: 24px !important;
-      min-width: 52px;
-      padding: 0 8px !important;
-      border: none !important;
+      position: fixed !important;
+      top: max(16px, env(safe-area-inset-top, 0px)) !important;
+      left: 16px !important;
+      height: 40px !important;
+      min-width: 72px;
+      padding: 0 14px !important;
+      border: 1px solid rgba(255, 255, 255, 0.3) !important;
       border-radius: 999px !important;
-      background: rgba(0, 0, 0, 0.06) !important;
-      color: #475569 !important;
-      font-size: 11px !important;
+      background: rgba(0, 0, 0, 0.72) !important;
+      color: #fff !important;
+      font-size: 13px !important;
       font-weight: 700 !important;
       cursor: pointer !important;
-      z-index: 10001 !important;
+      z-index: 100000 !important;
       outline: none !important;
       align-items: center;
       justify-content: center;
       display: none;
       user-select: none;
+      touch-action: manipulation;
     }
     #game-back:hover {
-      background: rgba(47, 111, 237, 0.12) !important;
-      color: #1d4ed8 !important;
+      background: rgba(59, 130, 246, 0.85) !important;
+      color: #fff !important;
     }
     #game-modal .game-drag-handle {
-      padding-left: 56px;
-      padding-right: 32px;
+      padding-left: 8px;
+      padding-right: 8px;
     }
 
     #game-body {
       padding: 8px 0 0;
       min-height: 0;
       overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      flex: 1;
     }
     .game-pane { display: none; }
     .game-pane.active { display: block; }
@@ -2700,35 +2899,18 @@
       z-index: 99999;
     }
 
-    html.st-extension-host #settings {
-      width: 100%;
-      max-width: 100%;
-      max-height: 80vh;
-      border-radius: 16px 16px 0 0;
-    }
-
-    html.st-extension-host #settings .settings-body {
-      -webkit-overflow-scrolling: touch;
-      overscroll-behavior: contain;
-    }
-
-    html.st-extension-host #settings input,
-    html.st-extension-host #settings textarea,
-    html.st-extension-host #settings select,
-    html.st-extension-host #settings .action-btn,
-    html.st-extension-host #settings .icon-btn {
+    #settings input,
+    #settings textarea,
+    #settings select,
+    #settings .action-btn,
+    #settings .icon-btn {
       font-size: 16px;
       min-height: 40px;
       touch-action: manipulation;
     }
 
-    html.st-extension-host #settings textarea {
+    #settings textarea {
       min-height: 88px;
-    }
-
-    html.st-extension-host #settings .settings-footer .action-btn.save-all {
-      min-height: 48px;
-      font-size: 16px;
     }
 
     .settings-head {
@@ -3493,7 +3675,7 @@
   <div id="stage">
     <div id="pet" class="pre-enter classic-mode pet-float-wrapper">
       <div id="cat-wrap" class="pet-classic-hachikyu">
-        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" />
+        <img id="cat" src="cat1.png" alt="八条猫" draggable="false" />
         <video id="pet-video" autoplay loop muted playsinline
           style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:none;"></video>
         <div id="bead-hat" aria-hidden="true"><img alt="" /></div>
@@ -3509,9 +3691,9 @@
         </div>
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
-      <button type="button" id="chat-spark" title="短按冒泡 · 长按对话 · 右键偷看酒馆" aria-label="短按冒泡 / 长按对话 / 右键偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" title="记忆胶囊：短按备忘 · 长按今日简报 · 右键连点器" aria-label="记忆胶囊">💊</button>
-      <button type="button" id="food-btn" title="左键：今天吃什么 · 右键：图片投喂栏" aria-label="今天吃什么">🍜</button>
+      <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="应用中心" aria-label="应用中心">📱</button>
+      <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
       <div class="bottom-badges-container" id="care-badges" aria-live="polite">
@@ -3549,11 +3731,10 @@
       <input type="file" id="feed-file-input" accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif" />
     </div>
 
-    <div id="game-modal" class="game-modal" role="dialog" aria-label="摸鱼游戏中心">
+    <div id="game-modal" class="game-modal mobile-fullscreen-view" role="dialog" aria-label="摸鱼游戏中心" aria-hidden="true">
+        <button type="button" id="game-close" class="game-close-btn close-btn mobile-safe-close-btn" title="关闭" aria-label="关闭游戏中心">✕</button>
         <button type="button" id="game-back" title="返回大厅" aria-label="返回大厅">‹ 返回</button>
-        <button type="button" id="game-close" class="game-close-btn close-btn" title="关闭 / Esc" aria-label="关闭游戏中心">✕</button>
-        <div class="game-drag-handle" id="game-drag-handle" title="按住拖动面板">
-          <div class="game-drag-grip" aria-hidden="true"></div>
+        <div class="game-drag-handle" id="game-drag-handle" title="摸鱼游戏中心">
           <span class="game-drag-title" id="game-drag-title">🎮 摸鱼中</span>
         </div>
         <div id="game-lobby" aria-label="游戏大厅">
@@ -3606,10 +3787,11 @@
             </div>
           </div>
           <div class="game-pane" id="game-pane-bead" data-game-pane="bead">
-            <p class="game-hint">点色填豆，右键可擦除</p>
+            <p class="game-hint">点色填豆；启用「橡皮」后可擦除</p>
             <canvas id="bead-canvas" class="bead-board" width="192" height="192" aria-label="像素拼豆画板"></canvas>
             <div id="bead-palette" role="listbox" aria-label="拼豆调色盘"></div>
             <div id="bead-controls">
+              <button type="button" id="bead-erase-toggle">橡皮</button>
               <button type="button" id="bead-clear">清空底板</button>
               <button type="button" id="bead-save">保存豆图</button>
               <button type="button" class="primary" id="bead-wear">戴上表情</button>
@@ -3635,7 +3817,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：长按胶囊生成今日简报；右键打开挂机连点器。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：点 📱 打开应用中心；长按 📱 可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -3652,65 +3834,38 @@
       </div>
     </div>
 
-    <div id="clicker-modal" role="dialog" aria-label="挂机连点器" aria-hidden="true">
-      <div class="capsule-modal-head">
-        <span>🖱️ 挂机连点器</span>
-        <button type="button" class="icon-btn close-btn" id="clicker-close" aria-label="关闭">✕</button>
-      </div>
-      <div class="capsule-modal-body">
-        <div class="clicker-points-head">
-          <span>点击位置列表</span>
-          <span id="clicker-points-count" style="font-weight:500;color:var(--text-muted);font-size:11px">0 个点</span>
+    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="应用中心" aria-hidden="true">
+      <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭应用中心">✕</button>
+      <div class="app-hub-inner">
+        <h3 class="app-hub-title">应用中心</h3>
+        <p class="app-hub-sub">点选进入移动端网页，可独立登录与使用</p>
+        <div id="app-hub-grid" aria-label="应用列表">
+          <button type="button" class="app-hub-icon" data-app="douyin" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
+            <span class="app-emoji" aria-hidden="true">🎵</span>
+            <span class="app-name">抖音</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-url="https://www.xiaohongshu.com/" data-murl="https://www.xiaohongshu.com/explore">
+            <span class="app-emoji" aria-hidden="true">📕</span>
+            <span class="app-name">小红书</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="discord" data-url="https://discord.com/login" data-murl="https://discord.com/login">
+            <span class="app-emoji" aria-hidden="true">💬</span>
+            <span class="app-name">Discord</span>
+          </button>
         </div>
-        <div id="clicker-points-list" aria-label="坐标点列表"></div>
-        <p id="clicker-points-empty">暂无坐标点：将跟随鼠标当前位置连点。添加点后按序号循环巡检。</p>
-        <div class="clicker-points-actions">
-          <button type="button" class="action-btn primary" id="clicker-capture-btn" title="Alt+A 立即抓取">+ 添加当前鼠标位置点</button>
-          <button type="button" class="action-btn ghost" id="clicker-clear-points">清空所有点</button>
-        </div>
-        <p class="field-hint" style="margin-top:0">抓取：按钮倒计时 2 秒，或按 Alt+A 立即记录。屏幕上会显示序号浮标。</p>
-
-        <div class="field">
-          <span>点击类型</span>
-          <div class="gender-radios" role="radiogroup">
-            <label><input type="radio" name="clicker-mode" id="clicker-mode-tap" value="tap" checked />短按连点</label>
-            <label><input type="radio" name="clicker-mode" id="clicker-mode-hold" value="hold" />长按蓄力</label>
+        <div id="app-hub-stage" aria-live="polite">
+          <div id="app-hub-stage-bar">
+            <button type="button" id="app-hub-back">‹ 返回</button>
+            <span class="app-stage-title" id="app-hub-stage-title">应用</span>
+            <button type="button" id="app-hub-open-ext">外部打开</button>
           </div>
+          <iframe id="app-hub-frame" title="应用内嵌页" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" referrerpolicy="no-referrer"></iframe>
+          <div id="app-hub-fallback">该站点可能禁止内嵌。请点「外部打开」在系统浏览器中继续登录使用。</div>
         </div>
-        <div class="clicker-row">
-          <label for="clicker-count">点击次数</label>
-          <input type="number" id="clicker-count" min="1" max="99999" value="100" style="width:96px" />
-        </div>
-        <div class="toggle-row">
-          <span>无限循环直至手动中止</span>
-          <label class="switch">
-            <input type="checkbox" id="clicker-infinite" />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <label class="field"><span>按下持续时长（下落时间 ms）</span>
-          <input type="range" id="clicker-hold-ms" min="50" max="1000" step="10" value="80" />
-          <span id="clicker-hold-label">80ms</span>
-        </label>
-        <label class="field"><span>点击间隔（ms）</span>
-          <input type="range" id="clicker-interval-ms" min="30" max="2000" step="10" value="120" />
-          <span id="clicker-interval-label">120ms</span>
-        </label>
-        <div class="toggle-row">
-          <span>随机下落 / 随机延迟（防机械节奏）</span>
-          <label class="switch">
-            <input type="checkbox" id="clicker-jitter" checked />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <p class="field-hint">热键：F8 启动 · F9 紧急中止（全局）。无点位时请把鼠标移到目标；有点位则按序移动点击。</p>
-        <div class="clicker-actions">
-          <button type="button" class="action-btn primary" id="clicker-start">启动 (F8)</button>
-          <button type="button" class="action-btn ghost" id="clicker-stop" style="color:var(--danger)">紧急中止 (F9)</button>
-        </div>
-        <div id="clicker-status">状态：空闲</div>
       </div>
     </div>
+
+    <div id="clicker-modal" hidden aria-hidden="true" style="display:none!important"></div>
 
     <div id="chat-panel" role="dialog" aria-label="深度对话">
       <div class="chat-head">
@@ -3928,18 +4083,10 @@
           <summary data-i18n="sec.tavern">AI 角色与酒馆预设</summary>
           <p class="field-hint">支持导入 SillyTavern 预设 / 角色卡 JSON；切换后立即作用于长按 ✨ 深度对话。右键 ✨ 可偷看酒馆最新对话并即兴吐槽。</p>
 
-          <div class="toggle-row">
-            <span>评价生成优先用酒馆当前模型</span>
-            <label class="switch">
-              <input type="checkbox" id="opt-tavern-generate" checked />
-              <span class="slider"></span>
-            </label>
-          </div>
-          <p class="field-hint">插件模式：右键 ✨ 直接读 SillyTavern.getContext().chat。开启后复用酒馆已选连接生成吐槽；关闭则走下方独立 Endpoint（SiliconFlow / OpenAI）。</p>
-          <label class="field"><span>酒馆本地地址（独立桌宠探测用）</span>
+          <label class="field"><span>酒馆本地地址（右键 ✨ 抓取用）</span>
             <input type="text" id="cfg-tavern-base" placeholder="http://127.0.0.1:8000" />
           </label>
-          <p class="field-hint">仅独立桌宠需要填写。插件已内嵌在酒馆页面时会直连 getContext()，不必探测此地址。</p>
+          <p class="field-hint">独立桌宠会优先探测此地址；抓不到消息时会尝试读取剪贴板中刚复制的酒馆对话。</p>
 
           <div class="st-toolbar">
             <select id="st-preset-select" title="切换预设" aria-label="切换预设">
@@ -5177,7 +5324,6 @@
         searchApiEndpoint: "https://api.tavily.com/search",
         searchApiKey: "",
         tavernBaseUrl: "http://127.0.0.1:8000",
-        tavernGenerateMode: "tavern",
         clickerConfig: {
           mode: "tap",
           count: 100,
@@ -6331,6 +6477,7 @@
 
       function openCfgModal(opts) {
         opts = opts || {};
+        bindCfgModalUi();
         const modal = document.getElementById("cfg-modal");
         const title = document.getElementById("cfg-modal-title");
         const msg = document.getElementById("cfg-modal-msg");
@@ -6338,18 +6485,20 @@
         const textarea = document.getElementById("cfg-modal-textarea");
         const okBtn = document.getElementById("cfg-modal-ok");
         const cancelBtn = document.getElementById("cfg-modal-cancel");
+        /* DOM 缺失时返回特殊哨兵，便于调用方走本地兜底，避免静默当「取消」 */
         if (!modal || !title || !okBtn || !cancelBtn) {
-          return Promise.resolve(opts.mode === "confirm" ? false : null);
+          return Promise.resolve(opts.mode === "confirm" ? false : "__CFG_MODAL_MISSING__");
         }
-        /* 保证弹窗挂在 body 顶层，避免被设置面板盖住 */
-        if (modal.parentNode !== document.body) {
+        /* 保证弹窗挂在 body 顶层，避免被设置面板 overflow/transform 盖住 */
+        try {
           document.body.appendChild(modal);
-        }
+        } catch (_) {}
         title.textContent = opts.title || "输入";
         if (msg) {
           const message = opts.message != null ? String(opts.message) : "";
           if (message) {
             msg.hidden = false;
+            msg.removeAttribute("hidden");
             msg.textContent = message;
           } else {
             msg.hidden = true;
@@ -6358,12 +6507,18 @@
         }
         const mode = opts.mode || "prompt";
         if (input) {
-          input.hidden = mode !== "prompt";
+          const showInput = mode === "prompt";
+          input.hidden = !showInput;
+          if (showInput) input.removeAttribute("hidden");
+          else input.setAttribute("hidden", "");
           input.value = opts.defaultValue != null ? String(opts.defaultValue) : "";
           input.placeholder = opts.placeholder || "请输入";
         }
         if (textarea) {
-          textarea.hidden = mode !== "textarea";
+          const showTa = mode === "textarea";
+          textarea.hidden = !showTa;
+          if (showTa) textarea.removeAttribute("hidden");
+          else textarea.setAttribute("hidden", "");
           textarea.value = opts.defaultValue != null ? String(opts.defaultValue) : "";
           textarea.placeholder = opts.placeholder || "";
         }
@@ -6371,14 +6526,13 @@
         cancelBtn.textContent = opts.cancelText || "取消";
         modal.hidden = false;
         modal.removeAttribute("hidden");
+        modal.classList.add("is-open");
         modal.style.display = "flex";
         modal.style.visibility = "visible";
         modal.style.opacity = "1";
         modal.style.pointerEvents = "auto";
+        modal.style.zIndex = "2147483000";
         modal.setAttribute("aria-hidden", "false");
-        if (modal.parentNode !== document.body) {
-          document.body.appendChild(modal);
-        }
         setTimeout(function () {
           if (mode === "textarea" && textarea) textarea.focus();
           else if (mode === "prompt" && input) {
@@ -6394,8 +6548,12 @@
       function closeCfgModal(result) {
         const modal = document.getElementById("cfg-modal");
         if (modal) {
+          modal.classList.remove("is-open");
           modal.hidden = true;
+          modal.setAttribute("hidden", "");
           modal.style.display = "none";
+          modal.style.visibility = "hidden";
+          modal.style.opacity = "0";
           modal.setAttribute("aria-hidden", "true");
         }
         const resolve = cfgModalResolver;
@@ -7059,10 +7217,6 @@
             all.push(e);
           }
         }
-        try {
-          const extra = collectTavernLoreEntries();
-          for (let k = 0; k < extra.length; k++) all.push(extra[k]);
-        } catch (_) {}
         return all;
       }
 
@@ -7420,7 +7574,6 @@
                 ? parsed.tavernBaseUrl
                 : (DEFAULT_SETTINGS.tavernBaseUrl || "http://127.0.0.1:8000")
             ).trim() || "http://127.0.0.1:8000",
-            tavernGenerateMode: (parsed.tavernGenerateMode === "custom") ? "custom" : "tavern",
             clickerConfig: normalizeClickerConfig(parsed.clickerConfig)
           });
           delete merged.worldbook;
@@ -7966,8 +8119,8 @@
         pet.classList.remove("gif-mode", "video-mode", "static-mode");
         stopPetVideo();
         if (cat) cat.classList.remove("pet-static");
-        if (typeof state !== "undefined" && state === "biting") cat.src = "assets/cat2.png";
-        else cat.src = "assets/cat1.png";
+        if (typeof state !== "undefined" && state === "biting") cat.src = "cat2.png";
+        else cat.src = "cat1.png";
         if (cat) cat.style.display = "block";
       }
 
@@ -8380,105 +8533,16 @@
        * 3) 探测本地酒馆是否存活
        * 4) 剪贴板兜底
        */
-      function getSillyTavernApi() {
-        try {
-          if (window.SillyTavern && typeof window.SillyTavern.getContext === "function") return window.SillyTavern;
-        } catch (_) {}
-        try {
-          if (window.parent && window.parent !== window && window.parent.SillyTavern) return window.parent.SillyTavern;
-        } catch (_) {}
-        return null;
-      }
-
-      function collectTavernLoreEntries() {
-        const st = getSillyTavernApi();
-        if (!st || typeof st.getContext !== "function") return [];
-        const extra = [];
-        try {
-          const ctx = st.getContext();
-          const wi = ctx.worldInfo || ctx.world_info || ctx.lorebook;
-          let list = [];
-          if (Array.isArray(wi)) list = wi;
-          else if (wi && Array.isArray(wi.entries)) list = wi.entries;
-          else if (wi && typeof wi === "object") list = Object.values(wi.entries || wi);
-          for (let i = 0; i < list.length; i++) {
-            const e = list[i];
-            if (!e || e.disable || e.disabled || e.enabled === false) continue;
-            const content = String(e.content || "").trim();
-            if (!content) continue;
-            const keys = [].concat(e.keys || e.key || []).map(String).filter(Boolean);
-            extra.push({
-              enabled: true,
-              constant: !!(e.constant || e.alwaysActive),
-              keys: keys,
-              content: content.slice(0, WB_ENTRY_CONTENT_MAX)
-            });
-          }
-          const id = ctx.characterId;
-          const ch = (ctx.characters && (ctx.characters[id] || ctx.characters[ctx.characterId])) || null;
-          if (ch) {
-            const bits = [ch.description, ch.personality, ch.scenario, ch.data && ch.data.description]
-              .map(function (x) { return String(x || "").trim(); })
-              .filter(Boolean);
-            if (bits.length) {
-              extra.push({
-                enabled: true,
-                constant: true,
-                keys: [],
-                content: "[酒馆角色卡]\n" + bits.join("\n").slice(0, 900)
-              });
-            }
-          }
-        } catch (_) {}
-        return extra;
-      }
-
-      function notifyStHost(payload) {
-        if (!window.__PET_ST_MODE__) return;
-        try { window.parent.postMessage(payload, "*"); } catch (_) {}
-      }
-
-      async function generateViaSillyTavern(userPrompt, opts) {
-        opts = opts || {};
-        const st = getSillyTavernApi();
-        if (!st || typeof st.getContext !== "function") return "";
-        const ctx = st.getContext();
-        const systemContent = buildSystemPromptForLlm(store, userPrompt);
-        const userContent = typeof buildLlmUserPrompt === "function"
-          ? buildLlmUserPrompt(userPrompt)
-          : String(userPrompt || "");
-        const maxChars = Math.max(20, Math.min(80, Number(opts.maxChars) || 30));
-        let raw = "";
-        if (typeof ctx.generateRaw === "function") {
-          raw = await ctx.generateRaw({
-            systemPrompt: systemContent,
-            prompt: userContent
-          });
-        } else if (typeof ctx.generateQuietPrompt === "function") {
-          raw = await ctx.generateQuietPrompt({
-            quietPrompt: (systemContent.slice(0, 1200) + "\n\n" + userContent).slice(0, 2400)
-          });
-        }
-        const cleaned = String(raw || "").trim().replace(/^["「『]|["」』]$/g, "");
-        return cleaned ? cleaned.slice(0, maxChars) : "";
-      }
-
       async function fetchTavernChatContext(storeRef) {
         const s = storeRef || loadStore();
         const base = String(s.tavernBaseUrl || DEFAULT_SETTINGS.tavernBaseUrl || "http://127.0.0.1:8000").trim();
 
         try {
-          const st = getSillyTavernApi();
+          const st = window.SillyTavern || (window.parent && window.parent.SillyTavern) || null;
           if (st && typeof st.getContext === "function") {
-            const ctx = st.getContext();
-            const currentChat = ctx.chat || [];
-            const lastMessage = currentChat[currentChat.length - 1] && currentChat[currentChat.length - 1].mes;
-            const turns = extractTavernTurnsFromContext(ctx);
+            const turns = extractTavernTurnsFromContext(st.getContext());
             const lines = formatTavernChatTurns(turns);
-            if (lines.length) return { ok: true, source: "context", lines: lines, lastMessage: lastMessage };
-            if (lastMessage) {
-              return { ok: true, source: "context", lines: [String(lastMessage)], lastMessage: lastMessage };
-            }
+            if (lines.length) return { ok: true, source: "context", lines: lines };
           }
         } catch (_) {}
 
@@ -8617,7 +8681,7 @@
         }
 
         chatSpark.addEventListener("pointerdown", function (e) {
-          /* 右键留给 contextmenu：偷看酒馆，不触发短按/长按 */
+          /* 双击留给偷看酒馆；此处忽略非主按键 */
           if (e.button === 2) {
             e.preventDefault();
             e.stopPropagation();
@@ -8645,6 +8709,8 @@
           }, SPARK_LONG_MS);
         }, true);
 
+        let lastSparkTap = 0;
+        let sparkSingleTimer = null;
         function endSparkPress(e) {
           if (e) {
             e.preventDefault();
@@ -8663,7 +8729,23 @@
             }
             return;
           }
-          runSparkShortPress();
+          const now = Date.now();
+          const diff = now - lastSparkTap;
+          if (diff > 0 && diff < 300) {
+            lastSparkTap = 0;
+            if (sparkSingleTimer) { clearTimeout(sparkSingleTimer); sparkSingleTimer = null; }
+            runTavernSparkPeek();
+            return;
+          }
+          lastSparkTap = now;
+          if (sparkSingleTimer) clearTimeout(sparkSingleTimer);
+          sparkSingleTimer = setTimeout(function () {
+            sparkSingleTimer = null;
+            if (Date.now() - lastSparkTap >= 280 && lastSparkTap !== 0) {
+              lastSparkTap = 0;
+              runSparkShortPress();
+            }
+          }, 300);
         }
 
         chatSpark.addEventListener("pointerup", endSparkPress, true);
@@ -8674,7 +8756,6 @@
         chatSpark.addEventListener("contextmenu", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          runTavernSparkPeek();
         }, true);
         chatSpark.addEventListener("click", function (e) {
           e.preventDefault();
@@ -10020,23 +10101,6 @@
         if (!store.llmEnabled) {
           return { line: fallbackLine(fallbackPool), source: "fallback", reason: "llm_off" };
         }
-        const preferTavernGen = window.__PET_ST_MODE__ && store.tavernGenerateMode !== "custom";
-        const hasCustomEndpoint = !!(store.apiEndpoint && store.apiKey);
-        if (preferTavernGen || (window.__PET_ST_MODE__ && !hasCustomEndpoint)) {
-          try {
-            const stLine = await generateViaSillyTavern(userPrompt, opts);
-            if (stLine) return { line: stLine, source: "llm" };
-          } catch (stErr) {
-            logLlmFallback("tavern_generate", stErr && stErr.message);
-          }
-          if (!hasCustomEndpoint) {
-            return {
-              line: fallbackLine(fallbackPool),
-              source: "fallback",
-              hint: "酒馆生成未返回内容，且未配置独立 Endpoint"
-            };
-          }
-        }
         if (!store.apiEndpoint || !store.apiKey) {
           logLlmFallback("missing_config", "已开启实时生成但未填写 Endpoint 或 API Key");
           return {
@@ -10860,7 +10924,6 @@
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
         syncFeedTrayOverlay();
-        notifyStHost({ type: "eighttailcat-expand", on: true });
         markActivity();
       }
 
@@ -10877,7 +10940,6 @@
           setFeedTrayStatus("等待投喂…");
         }
         syncFeedTrayOverlay();
-        notifyStHost({ type: "eighttailcat-expand", on: false });
       }
 
       function bindFeedTrayUi() {
@@ -11298,7 +11360,6 @@
         searchEndpoint: document.getElementById("cfg-search-endpoint"),
         searchApikey: document.getElementById("cfg-search-apikey"),
         tavernBase: document.getElementById("cfg-tavern-base"),
-        tavernGenerate: document.getElementById("opt-tavern-generate"),
         favList: document.getElementById("fav-list"),
         offlineList: document.getElementById("offline-list"),
         offlineAdd: document.getElementById("cfg-offline-add")
@@ -11739,9 +11800,6 @@
         if (fields.tavernBase) {
           fields.tavernBase.value = store.tavernBaseUrl || DEFAULT_SETTINGS.tavernBaseUrl || "http://127.0.0.1:8000";
         }
-        if (fields.tavernGenerate) {
-          fields.tavernGenerate.checked = store.tavernGenerateMode !== "custom";
-        }
         applyUiTheme(store.uiTheme || "clean-light");
         applyCustomCss(store.customCss || "");
         renderThemeGrid(store.uiTheme || "clean-light");
@@ -11822,6 +11880,7 @@
               const idx = list.findIndex(function (p) { return p && p.id === activeId; });
               if (idx >= 0) {
                 list[idx] = Object.assign({}, list[idx], {
+                  prompt: personaBits.persona,
                   persona: personaBits.persona,
                   rules: personaBits.rules,
                   negative: personaBits.negative
@@ -11870,7 +11929,6 @@
           tavernBaseUrl: fields.tavernBase
             ? (String(fields.tavernBase.value || "").trim() || "http://127.0.0.1:8000")
             : String(store.tavernBaseUrl || DEFAULT_SETTINGS.tavernBaseUrl || "http://127.0.0.1:8000").trim(),
-          tavernGenerateMode: (fields.tavernGenerate && !fields.tavernGenerate.checked) ? "custom" : "tavern",
           gifActions: gifActions,
           videoActions: videoActions,
           staticActions: staticActions
@@ -12519,14 +12577,31 @@
         syncCapsuleOverlay();
       }
 
+      function closeAppHubModal() {
+        const modal = document.getElementById("app-hub-modal");
+        if (modal) {
+          modal.classList.remove("open");
+          modal.setAttribute("aria-hidden", "true");
+          const stage = document.getElementById("app-hub-stage");
+          const frame = document.getElementById("app-hub-frame");
+          const fallback = document.getElementById("app-hub-fallback");
+          if (stage) stage.classList.remove("active");
+          if (frame) {
+            try { frame.src = "about:blank"; } catch (_) {}
+          }
+          if (fallback) fallback.classList.remove("show");
+        }
+        try { syncCapsuleOverlay(); } catch (_) {}
+      }
+
       function closeClickerModal() {
+        closeAppHubModal();
         const modal = document.getElementById("clicker-modal");
         if (!modal) return;
         modal.classList.remove("open");
         modal.setAttribute("aria-hidden", "true");
-        cancelClickerPointCapture();
-        syncClickerPointMarkers(false);
-        syncCapsuleOverlay();
+        try { cancelClickerPointCapture(); } catch (_) {}
+        try { syncClickerPointMarkers(false); } catch (_) {}
       }
 
       function readClickerForm() {
@@ -12750,27 +12825,108 @@
         }, 1000);
       }
 
-      function openClickerModal() {
+      let appHubCurrentUrl = "";
+
+      function openAppHubModal() {
         if (IS_SETTINGS_WINDOW) return;
-        const modal = document.getElementById("clicker-modal");
+        const modal = document.getElementById("app-hub-modal");
         if (!modal) return;
         try { closeGameModal(); } catch (_) {}
-        closeNewsBriefModal();
+        try { closeNewsBriefModal(); } catch (_) {}
         const memoPanel = document.getElementById("memo-panel");
         if (memoPanel) memoPanel.classList.remove("open");
-        store = loadStore();
-        writeClickerForm(store.clickerConfig);
-        persistClickerConfig();
+        const chatPanel = document.getElementById("chat-panel");
+        if (chatPanel) chatPanel.classList.remove("open");
+        const stage = document.getElementById("app-hub-stage");
+        const fallback = document.getElementById("app-hub-fallback");
+        if (stage) stage.classList.remove("active");
+        if (fallback) fallback.classList.remove("show");
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
-        syncCapsuleOverlay();
-        syncClickerPointMarkers(true);
-        const n = normalizeClickerConfig(store.clickerConfig).points.length;
-        setClickerStatusText(
-          n
-            ? ("状态：空闲 · 已配置 " + n + " 个点 · F8 启动 / F9 中止")
-            : "状态：空闲 · 无点位将跟随鼠标 · F8 / F9"
-        );
+        try { syncCapsuleOverlay(); } catch (_) {}
+        try { reportHitRect(); } catch (_) {}
+        markActivity();
+      }
+
+      function openAppInHub(name, url, mobileUrl) {
+        const stage = document.getElementById("app-hub-stage");
+        const frame = document.getElementById("app-hub-frame");
+        const title = document.getElementById("app-hub-stage-title");
+        const fallback = document.getElementById("app-hub-fallback");
+        const target = mobileUrl || url;
+        appHubCurrentUrl = target;
+        if (title) title.textContent = name || "应用";
+        if (fallback) fallback.classList.remove("show");
+        if (stage) stage.classList.add("active");
+        if (frame) {
+          frame.onload = function () {
+            /* 部分站点空白/拦截时仍给用户外部打开入口 */
+            setTimeout(function () {
+              if (fallback) fallback.classList.add("show");
+            }, 1800);
+          };
+          try { frame.src = target; } catch (_) {
+            if (fallback) fallback.classList.add("show");
+          }
+        }
+      }
+
+      function bindAppHubUi() {
+        if (window.__appHubUiBound) return;
+        window.__appHubUiBound = true;
+        const modal = document.getElementById("app-hub-modal");
+        const closeBtn = document.getElementById("app-hub-close");
+        const backBtn = document.getElementById("app-hub-back");
+        const openExt = document.getElementById("app-hub-open-ext");
+        const grid = document.getElementById("app-hub-grid");
+        if (closeBtn) {
+          closeBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAppHubModal();
+          });
+        }
+        if (backBtn) {
+          backBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            const stage = document.getElementById("app-hub-stage");
+            const frame = document.getElementById("app-hub-frame");
+            if (stage) stage.classList.remove("active");
+            if (frame) {
+              try { frame.src = "about:blank"; } catch (_) {}
+            }
+            appHubCurrentUrl = "";
+          });
+        }
+        if (openExt) {
+          openExt.addEventListener("click", function (e) {
+            e.preventDefault();
+            if (!appHubCurrentUrl) return;
+            try { window.open(appHubCurrentUrl, "_blank", "noopener,noreferrer"); } catch (_) {}
+          });
+        }
+        if (grid) {
+          grid.addEventListener("click", function (e) {
+            const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
+            if (!btn) return;
+            e.preventDefault();
+            const nameEl = btn.querySelector(".app-name");
+            openAppInHub(
+              (nameEl && nameEl.textContent) || btn.getAttribute("data-app"),
+              btn.getAttribute("data-url"),
+              btn.getAttribute("data-murl")
+            );
+          });
+        }
+        if (modal) {
+          modal.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+          modal.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
+        }
+      }
+
+      function openClickerModal() {
+        /* 移动版：连点器已替换为应用中心 */
+        openAppHubModal();
       }
 
       const NEWS_OFFLINE_LINES = [
@@ -13177,8 +13333,9 @@
             return;
           }
           if (wasLong) return;
-          if (memoPanel.classList.contains("open")) closeMemo();
-          else openMemo();
+          /* 短按：打开移动端应用中心（替代原连点器 / 右键） */
+          try { closeMemo(); } catch (_) {}
+          openAppHubModal();
           markActivity();
         }
 
@@ -13191,12 +13348,6 @@
         memoBtn.addEventListener("contextmenu", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          clearHoldTimer();
-          pressAt = 0;
-          longFired = false;
-          dragMode = false;
-          openClickerModal();
-          markActivity();
         }, true);
 
         memoBtn.addEventListener("click", function (e) {
@@ -13325,7 +13476,7 @@
           }, true);
         }
 
-        ["news-brief-modal", "clicker-modal", "memo-panel"].forEach(function (id) {
+        ["news-brief-modal", "clicker-modal", "memo-panel", "app-hub-modal"].forEach(function (id) {
           const el = document.getElementById(id);
           if (!el) return;
           el.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
@@ -13476,15 +13627,35 @@
       function bindFoodUi() {
         const foodBtn = document.getElementById("food-btn");
         if (!foodBtn) return;
+        let lastFoodTap = 0;
+        let foodTapTimer = null;
+        function onFoodTap() {
+          const now = Date.now();
+          const diff = now - lastFoodTap;
+          if (diff > 0 && diff < 300) {
+            lastFoodTap = 0;
+            if (foodTapTimer) { clearTimeout(foodTapTimer); foodTapTimer = null; }
+            openFeedTrayModal();
+            return;
+          }
+          lastFoodTap = now;
+          if (foodTapTimer) clearTimeout(foodTapTimer);
+          foodTapTimer = setTimeout(function () {
+            foodTapTimer = null;
+            if (Date.now() - lastFoodTap >= 280 && lastFoodTap !== 0) {
+              lastFoodTap = 0;
+              randomPickFood();
+            }
+          }, 300);
+        }
         foodBtn.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          randomPickFood();
+          onFoodTap();
         });
         foodBtn.addEventListener("contextmenu", function (e) {
           e.preventDefault();
           e.stopPropagation();
-          openFeedTrayModal();
         });
       }
 
@@ -13626,13 +13797,13 @@
         const modal = document.getElementById("game-modal");
         if (!modal) return;
         modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
         modal.classList.remove("is-dragging");
         modal.classList.remove("in-game");
         activeGameTab = "";
         stopAllGameLoops();
         abortQtWindowDrag();
         setGameCanvasExpanded(false);
-        notifyStHost({ type: "eighttailcat-expand", on: false });
         if (window.bridge && window.bridge.setPetBusy) {
           try { window.bridge.setPetBusy(false); } catch (_) {}
         }
@@ -13756,13 +13927,16 @@
         const chatPanel = document.getElementById("chat-panel");
         if (memoPanel) memoPanel.classList.remove("open");
         if (chatPanel) chatPanel.classList.remove("open");
+        try { closeAppHubModal(); } catch (_) {}
         modal.classList.add("open");
-        if (!modal.dataset.posReady) {
-          placeGameModalCentered(modal);
-          modal.dataset.posReady = "1";
-        }
+        modal.setAttribute("aria-hidden", "false");
+        /* 全屏模式无需自由定位 */
+        modal.style.left = "";
+        modal.style.top = "";
+        modal.style.right = "";
+        modal.style.bottom = "";
+        modal.style.transform = "";
         setGameCanvasExpanded(true);
-        notifyStHost({ type: "eighttailcat-expand", on: true });
         if (window.bridge && window.bridge.setPetBusy) {
           try { window.bridge.setPetBusy(true); } catch (_) {}
         }
@@ -13968,6 +14142,11 @@
           okText: "清空",
           cancelText: "取消"
         });
+        if (ok === "__CFG_MODAL_MISSING__") {
+          /* 弹窗不可用时不误清数据 */
+          showToast("请在设置页确认后再试", 2000);
+          return;
+        }
         if (!ok) return;
         saveMuyuCount(0);
         refreshMuyuCount();
@@ -14812,16 +14991,25 @@
             paintBeadBoard(canvas, beadPaint.grid);
           }
 
+          beadPaint.eraseMode = false;
+          const eraseToggle = document.getElementById("bead-erase-toggle");
+          if (eraseToggle) {
+            eraseToggle.addEventListener("click", function () {
+              beadPaint.eraseMode = !beadPaint.eraseMode;
+              eraseToggle.classList.toggle("primary", beadPaint.eraseMode);
+              eraseToggle.textContent = beadPaint.eraseMode ? "橡皮·开" : "橡皮";
+            });
+          }
           canvas.addEventListener("pointerdown", function (e) {
             e.preventDefault();
             e.stopPropagation();
             beadPaint.drawing = true;
             try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
-            paintAt(e, e.button === 2);
+            paintAt(e, !!beadPaint.eraseMode || e.altKey || e.shiftKey);
           });
           canvas.addEventListener("pointermove", function (e) {
             if (!beadPaint.drawing) return;
-            paintAt(e, e.buttons === 2);
+            paintAt(e, !!beadPaint.eraseMode || e.altKey || e.shiftKey);
           });
           canvas.addEventListener("pointerup", function () { beadPaint.drawing = false; });
           canvas.addEventListener("pointercancel", function () { beadPaint.drawing = false; });
@@ -15159,10 +15347,6 @@
         } catch (_) {}
 
         try {
-          if (window.__PET_ST_MODE__) {
-            notifyStHost({ type: "eighttailcat-hide" });
-            return;
-          }
           if (window.bridge && typeof window.bridge.closePet === "function") {
             window.bridge.closePet();
             return;
@@ -15256,6 +15440,7 @@
       bindVideoUi();
       bindStaticUi();
       bindMemoUi();
+      bindAppHubUi();
       bindDeepChatUi();
       bindStPresetUi();
       bindFoodUi();
@@ -15661,15 +15846,10 @@
         } catch (_) {}
         settingsEl.classList.add("open");
         body.classList.add("settings-open");
-        notifyStHost({ type: "eighttailcat-expand", on: true });
       }
 
       function openSettings() {
         if (IS_SETTINGS_WINDOW) return;
-        if (window.__PET_ST_MODE__) {
-          openSettingsInPage();
-          return;
-        }
         /* Qt 客户端：优先走独立设置窗 */
         if (window.bridge && typeof window.bridge.openSettings === "function") {
           try {
@@ -15710,7 +15890,6 @@
         } catch (_) {}
         if (settingsEl) settingsEl.classList.remove("open");
         body.classList.remove("settings-open");
-        notifyStHost({ type: "eighttailcat-expand", on: false });
       }
 
       function bindSettingsWindowChrome() {
@@ -15788,30 +15967,15 @@
 
       if (IS_SETTINGS_WINDOW) bindSettingsWindowChrome();
 
-      /* 网页端 / Qt：全局右键呼出设置；输入框放行原生菜单 */
+      /* 移动触屏版：禁用系统右键菜单；设置改由桌宠双击打开 */
       document.addEventListener("contextmenu", function (e) {
         const t = e.target;
         const tag = (t && t.tagName) || "";
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
         if (t && t.isContentEditable) return;
-        /* 游戏中心内（尤其拼豆右键擦除）不打开设置 */
-        if (t && t.closest && (
-          t.closest("#game-modal") ||
-          t.closest("#bead-canvas") ||
-          t.closest(".bead-board")
-        )) {
         e.preventDefault();
         e.stopPropagation();
-          return;
-        }
-        e.preventDefault();
-        if (IS_SETTINGS_WINDOW) return;
-        if (typeof state !== "undefined" && (state === BITING || state === THROWING)) return;
-        /* 已在设置面板内右键：不重复打开 */
-        if (settingsEl && settingsEl.classList.contains("open") && settingsEl.contains(t)) return;
-        openSettings();
-        try { markActivity(); } catch (_) {}
-      });
+      }, true);
 
       /* =========================================================
        * 音效
@@ -16147,10 +16311,38 @@
         }
       }
 
+      function notifyStHost(payload) {
+        if (!window.__PET_ST_MODE__) return;
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, "*");
+          }
+        } catch (_) {}
+      }
+
+      function clampPetCenter(x, y) {
+        const petW = pet.offsetWidth || 238;
+        const petH = pet.offsetHeight || 238;
+        const winW = window.innerWidth || document.documentElement.clientWidth || petW;
+        const winH = window.innerHeight || document.documentElement.clientHeight || petH;
+        const topSafe = 50;
+        /* 中心点坐标：等价左上角 [0, W-petW] × [topSafe, H-petH] */
+        const minX = petW / 2;
+        const maxX = Math.max(minX, winW - petW / 2);
+        const minY = topSafe + petH / 2;
+        const maxY = Math.max(minY, winH - petH / 2);
+        return {
+          x: Math.min(maxX, Math.max(minX, Number(x) || 0)),
+          y: Math.min(maxY, Math.max(minY, Number(y) || 0))
+        };
+      }
+
       function placeAt(x, y, biting) {
-        pet.style.left = x + "px";
-        pet.style.top = y + "px";
-        pet.style.transform = biting ? "translate(-48%, -58%)" : "translate(-50%, -50%)";
+        const p = clampPetCenter(x, y);
+        pet.style.transition = "none";
+        pet.style.left = p.x + "px";
+        pet.style.top = p.y + "px";
+        pet.style.transform = biting ? "translate3d(-48%, -58%, 0)" : "translate3d(-50%, -50%, 0)";
       }
 
       function getCenter() {
@@ -16167,7 +16359,7 @@
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           triggerClickedVisual();
         } else {
-          cat.src = "assets/cat2.png";
+          cat.src = "cat2.png";
         }
         body.classList.add("hiding-cursor");
         biteClicks = 1;
@@ -16211,7 +16403,7 @@
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           resolveVisualAfterTemp();
         } else {
-          cat.src = "assets/cat1.png";
+          cat.src = "cat1.png";
         }
         body.classList.remove("hiding-cursor");
         hideBubble();
@@ -16322,6 +16514,7 @@
           el.closest("#memo-panel") ||
           el.closest("#news-brief-modal") ||
           el.closest("#clicker-modal") ||
+          el.closest("#app-hub-modal") ||
           el.closest("#food-btn") ||
           el.closest("#feed-tray-modal") ||
           el.closest("#game-btn") ||
@@ -16445,14 +16638,72 @@
         if (bubble.classList.contains("hover-tip")) hideBubble();
       });
 
+      let clickTimer = null;
+      let awaitingSecondClick = false;
+      let lastTapPoint = { x: 0, y: 0 };
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let touchMoved = false;
+      let petGestureActive = false;
+      let hostDragRaf = 0;
+      let hostDragPoint = null;
+
+      function handlePetSingleTap(point) {
+        if (state === THROWING) return;
+        if (state === BITING) {
+          playMeow();
+          registerBiteClick();
+          return;
+        }
+        markActivity();
+        triggerClickedVisual();
+        enterBite(point.x, point.y);
+      }
+
+      function handlePetDoubleTap() {
+        if (state === BITING || state === THROWING) return;
+        try { openSettings(); } catch (_) {}
+        try { markActivity(); } catch (_) {}
+      }
+
+      function resolvePetTap(point) {
+        lastTapPoint = point || lastTapPoint;
+        if (awaitingSecondClick && clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          awaitingSecondClick = false;
+          handlePetDoubleTap();
+          return;
+        }
+        awaitingSecondClick = true;
+        if (clickTimer) clearTimeout(clickTimer);
+        clickTimer = setTimeout(function () {
+          clickTimer = null;
+          awaitingSecondClick = false;
+          handlePetSingleTap(lastTapPoint);
+        }, 280);
+      }
+
+      function flushHostDrag() {
+        hostDragRaf = 0;
+        if (!hostDragPoint) return;
+        notifyStHost({
+          type: "eighttailcat-drag-move",
+          clientX: hostDragPoint.x,
+          clientY: hostDragPoint.y,
+          screenX: hostDragPoint.sx,
+          screenY: hostDragPoint.sy
+        });
+      }
+
       function eventPoint(e) {
         if (e.touches && e.touches.length) {
           const t = e.touches[0];
           return {
             x: t.clientX,
             y: t.clientY,
-            sx: (t.screenX != null ? t.screenX : t.clientX),
-            sy: (t.screenY != null ? t.screenY : t.clientY)
+            sx: t.screenX != null ? t.screenX : t.clientX,
+            sy: t.screenY != null ? t.screenY : t.clientY
           };
         }
         if (e.changedTouches && e.changedTouches.length) {
@@ -16460,104 +16711,141 @@
           return {
             x: t.clientX,
             y: t.clientY,
-            sx: (t.screenX != null ? t.screenX : t.clientX),
-            sy: (t.screenY != null ? t.screenY : t.clientY)
+            sx: t.screenX != null ? t.screenX : t.clientX,
+            sy: t.screenY != null ? t.screenY : t.clientY
           };
         }
         return {
           x: e.clientX,
           y: e.clientY,
-          sx: (e.screenX != null ? e.screenX : e.clientX),
-          sy: (e.screenY != null ? e.screenY : e.clientY)
+          sx: e.screenX != null ? e.screenX : e.clientX,
+          sy: e.screenY != null ? e.screenY : e.clientY
         };
-      }
-
-      function notifyDragHost(type, point) {
-        if (!window.__PET_ST_MODE__) return;
-        const payload = { type: type };
-        if (point) {
-          payload.clientX = point.x;
-          payload.clientY = point.y;
-          payload.screenX = point.sx;
-          payload.screenY = point.sy;
-        }
-        notifyStHost(payload);
       }
 
       function beginPetDrag(e, point) {
         if (state === THROWING) return false;
         if (isUiChromeTarget(e.target)) return false;
-        markActivity();
-        triggerClickedVisual();
-        if (state === BITING) {
-          playMeow();
-          registerBiteClick();
-          return false;
-        }
-        dragging = true;
+        petGestureActive = true;
+        touchMoved = false;
+        touchStartX = point.x;
+        touchStartY = point.y;
         dragMoved = false;
-        pet.classList.add("dragging");
-        pet.classList.remove("floating");
-        const c = getCenter();
+        dragging = false;
         startX = point.x;
         startY = point.y;
+        const c = getCenter();
         originX = c.x;
         originY = c.y;
-        if (window.__PET_ST_MODE__) {
-          notifyDragHost("eighttailcat-drag-start", point);
-        } else {
-          placeAt(c.x, c.y, false);
-        }
         return true;
       }
 
       function movePetDrag(point) {
-        if (state === BITING) return;
+        if (!petGestureActive) return;
+        if (state === BITING) {
+          if (!window.__PET_ST_MODE__) placeAt(point.x, point.y, true);
+          updateShakeFromSpeed(point.x, point.y);
+          return;
+        }
+        const dx = Math.abs(point.x - touchStartX);
+        const dy = Math.abs(point.y - touchStartY);
+        if (!touchMoved && (dx > 8 || dy > 8)) {
+          touchMoved = true;
+          dragging = true;
+          dragMoved = true;
+          if (awaitingSecondClick || clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+            awaitingSecondClick = false;
+          }
+          pet.classList.add("dragging");
+          pet.classList.remove("floating");
+          pet.style.transition = "none";
+          pet.style.animation = "none";
+          markActivity();
+          triggerClickedVisual();
+          if (window.__PET_ST_MODE__) {
+            notifyStHost({
+              type: "eighttailcat-drag-start",
+              clientX: point.x,
+              clientY: point.y,
+              screenX: point.sx,
+              screenY: point.sy
+            });
+          } else {
+            placeAt(originX, originY, false);
+          }
+        }
         if (!dragging || state !== IDLE) return;
-        if (Math.hypot(point.x - startX, point.y - startY) > 6) dragMoved = true;
         if (window.__PET_ST_MODE__) {
-          notifyDragHost("eighttailcat-drag-move", point);
+          hostDragPoint = point;
+          if (!hostDragRaf) hostDragRaf = requestAnimationFrame(flushHostDrag);
           return;
         }
         placeAt(originX + (point.x - startX), originY + (point.y - startY), false);
       }
 
       function endPetDrag(point, pointerId) {
-        if (state === IDLE && dragging) {
-          if (!dragMoved) enterBite(point.x, point.y);
-          else {
-            pet.classList.remove("dragging");
-            pet.classList.add("floating");
-            hideBubble();
-          }
-        }
-        if (window.__PET_ST_MODE__ && dragging) {
-          notifyDragHost("eighttailcat-drag-end");
-        }
-        dragging = false;
-        dragMoved = false;
+        const wasGesture = petGestureActive;
+        const wasSlide = touchMoved || dragMoved;
+        petGestureActive = false;
         if (pointerId != null) {
           try { pet.releasePointerCapture(pointerId); } catch (_) {}
         }
+        if (hostDragRaf) {
+          cancelAnimationFrame(hostDragRaf);
+          hostDragRaf = 0;
+          flushHostDrag();
+        }
+        if (state === BITING) {
+          dragging = false;
+          dragMoved = false;
+          touchMoved = false;
+          return;
+        }
+        if (wasSlide) {
+          if (window.__PET_ST_MODE__) {
+            notifyStHost({ type: "eighttailcat-drag-end" });
+          }
+          pet.classList.remove("dragging");
+          pet.classList.add("floating");
+          pet.style.animation = "";
+          hideBubble();
+          dragging = false;
+          dragMoved = false;
+          touchMoved = false;
+          return;
+        }
+        dragging = false;
+        dragMoved = false;
+        touchMoved = false;
+        pet.classList.remove("dragging");
+        if (wasGesture && state === IDLE) {
+          resolvePetTap(point || { x: startX, y: startY });
+        }
       }
 
-      /* 触屏优先：显式 touch*，避免移动端浏览器下拉刷新 / 页面滚动抢事件 */
       pet.addEventListener("touchstart", function (e) {
         if (!e.touches || !e.touches.length) return;
-        if (e.button === 2) return;
+        if (isUiChromeTarget(e.target)) return;
         const point = eventPoint(e);
+        if (state === BITING) {
+          petGestureActive = true;
+          e.preventDefault();
+          return;
+        }
         if (!beginPetDrag(e, point)) return;
         e.preventDefault();
       }, { passive: false });
 
       pet.addEventListener("touchmove", function (e) {
-        if (!dragging) return;
+        if (!petGestureActive && state !== BITING) return;
         e.preventDefault();
         movePetDrag(eventPoint(e));
       }, { passive: false });
 
       pet.addEventListener("touchend", function (e) {
-        if (!dragging) return;
+        if (!petGestureActive && state !== BITING) return;
         e.preventDefault();
         endPetDrag(eventPoint(e), null);
       }, { passive: false });
@@ -16568,13 +16856,18 @@
       }, { passive: false });
 
       pet.addEventListener("pointerdown", function (e) {
-        /* touch 已由 touchstart 处理，避免双触发 */
         if (e.pointerType === "touch") return;
         if (state === THROWING) return;
         if (e.button === 2) return;
         if (isUiChromeTarget(e.target)) return;
         e.preventDefault();
         const point = eventPoint(e);
+        if (state === BITING) {
+          petGestureActive = true;
+          playMeow();
+          registerBiteClick();
+          return;
+        }
         if (!beginPetDrag(e, point)) return;
         try { pet.setPointerCapture(e.pointerId); } catch (_) {}
       });
@@ -16595,7 +16888,7 @@
       window.addEventListener("pointermove", function (e) {
         if (e.pointerType === "touch") return;
         if (state !== BITING) return;
-        placeAt(e.clientX, e.clientY, true);
+        if (!window.__PET_ST_MODE__) placeAt(e.clientX, e.clientY, true);
         updateShakeFromSpeed(e.clientX, e.clientY);
       });
 
@@ -16604,7 +16897,7 @@
         if (!e.touches || !e.touches.length) return;
         e.preventDefault();
         const p = eventPoint(e);
-        placeAt(p.x, p.y, true);
+        if (!window.__PET_ST_MODE__) placeAt(p.x, p.y, true);
         updateShakeFromSpeed(p.x, p.y);
       }, { passive: false });
 
@@ -16660,8 +16953,6 @@
         }
       });
 
-      window.openSettings = openSettings;
-      window.closeSettings = closeSettings;
 
       if (window.__PET_ST_MODE__) {
         document.documentElement.classList.add("st-extension-host");
@@ -16671,6 +16962,9 @@
           try { openSettings(); } catch (_) {}
         });
       }
+
+      window.openSettings = openSettings;
+      window.closeSettings = closeSettings;
 
       let introFinished = false;
 

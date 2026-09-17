@@ -1,10 +1,11 @@
-/* 酒馆宿主层（移动触屏版）：更小浮层 + 右下角默认位。主体样式在 pet.html 内。 */
+/* 酒馆宿主层（移动触屏版）：轻量浮层 + translate3d 拖拽 */
 #pet-container-mobile {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: 9999;
-  /* 约原 PC 浮层 70% */
-  width: min(294px, 70vw);
-  height: min(392px, 55vh);
+  width: min(280px, 72vw);
+  height: min(360px, 55vh);
   pointer-events: auto;
   background: transparent;
   border: 0;
@@ -12,6 +13,13 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+  will-change: transform;
+  transition: none;
+}
+
+#pet-container-mobile.is-dragging {
+  transition: none !important;
+  will-change: transform;
 }
 
 #pet-container-mobile.eighttailcat-expanded {
@@ -31,6 +39,7 @@
   background: transparent;
   color-scheme: none;
   touch-action: none;
+  pointer-events: auto;
 }
 
 #eighttailcat-mobile-settings {
@@ -51,32 +60,42 @@
   touch-action: manipulation;
 }
 
-/* 隐藏桌宠后的右下角常驻召唤按钮 */
-#eighttailcat-mobile-fab {
+/* 右缘正中：极小半透明猫爪显隐开关（始终可见） */
+#eighttailcat-mobile-dock {
   position: fixed;
-  right: max(12px, env(safe-area-inset-right, 0px));
-  bottom: max(16px, env(safe-area-inset-bottom, 0px));
-  z-index: 100000;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(15, 23, 42, 0.88);
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 100001;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  background: rgba(15, 23, 42, 0.45);
   color: #fff;
-  font-size: 22px;
+  font-size: 14px;
   line-height: 1;
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  opacity: 0.6;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  padding: 0;
+  box-shadow: -2px 2px 8px rgba(0, 0, 0, 0.2);
 }
-#eighttailcat-mobile-fab.is-visible {
-  display: flex;
+#eighttailcat-mobile-dock.is-collapsed {
+  opacity: 0.85;
+  background: rgba(91, 141, 239, 0.75);
 }
-#eighttailcat-mobile-fab:active {
-  transform: scale(0.94);
+#eighttailcat-mobile-dock:active {
+  opacity: 1;
+  transform: translateY(-50%) scale(0.94);
+}
+
+/* 兼容旧 FAB id（若残留则隐藏） */
+#eighttailcat-mobile-fab {
+  display: none !important;
 }
