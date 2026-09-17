@@ -172,6 +172,83 @@ function svEnsureNoReferrerMeta() {
   } catch (_) {}
 }
 
+/**
+ * 从成人源视频对象中稳健提取封面 URL
+ * （兼容 thumb / default_thumb / preview / thumbnail / thumbs[].src 等）
+ */
+function svPickThumbUrl(raw) {
+  function asUrl(v) {
+    if (v == null) return '';
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (!s || s === '[object Object]') return '';
+      if (/^https?:\/\//i.test(s)) return s.replace(/^http:\/\//i, 'https://');
+      if (s.indexOf('//') === 0) return 'https:' + s;
+      return '';
+    }
+    if (typeof v === 'object') {
+      return asUrl(v.src || v.url || v.thumb || v.large || v.medium || v.small || v.preview || '');
+    }
+    return '';
+  }
+
+  if (typeof raw === 'string') return asUrl(raw);
+  if (!raw || typeof raw !== 'object') return '';
+
+  const direct = [
+    raw.default_thumb,
+    raw.thumb,
+    raw.thumbnail,
+    raw.preview,
+    raw.preview_url,
+    raw.previewUrl,
+    raw.cover,
+    raw.image,
+    raw.poster,
+    raw.thumbUrl,
+    raw.thumbnailUrl,
+    raw.thumb_url,
+  ];
+  for (let i = 0; i < direct.length; i++) {
+    const u = asUrl(direct[i]);
+    if (u) return u;
+  }
+
+  const lists = [raw.thumbs, raw.thumbList, raw.thumbnails, raw.previews, raw.images];
+  for (let li = 0; li < lists.length; li++) {
+    const arr = lists[li];
+    if (!Array.isArray(arr)) continue;
+    /* 优先较大尺寸 */
+    for (let j = arr.length - 1; j >= 0; j--) {
+      const u = asUrl(arr[j]);
+      if (u) return u;
+    }
+  }
+
+  if (raw.files && typeof raw.files === 'object') {
+    const u = asUrl(raw.files.thumb || raw.files.thumbSlideBig || raw.files.thumbSlide || raw.files.thumb69);
+    if (u) return u;
+  }
+  return '';
+}
+
+function svAttachNoReferrerImg(img, src) {
+  if (!img) return;
+  try {
+    img.referrerPolicy = 'no-referrer';
+    img.setAttribute('referrerpolicy', 'no-referrer');
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.alt = img.alt || '';
+    if (src) img.src = src;
+  } catch (_) {
+    try {
+      img.setAttribute('referrerpolicy', 'no-referrer');
+      if (src) img.src = src;
+    } catch (__) {}
+  }
+}
+
 function svYoutubeEmbedUrl(videoId) {
   const id = encodeURIComponent(String(videoId || '').trim());
   let currentOrigin = 'http://127.0.0.1';
@@ -452,14 +529,13 @@ function svNormalizeAdultItems(source, data) {
       const v = videos[i] || {};
       const id = String(v.id || v.video_id || '').trim();
       if (!id) continue;
-      const thumb = v.default_thumb || v.thumb ||
-        (v.thumbs && v.thumbs[0] && (v.thumbs[0].src || v.thumbs[0])) || '';
+      const thumb = svPickThumbUrl(v);
       const len = v.length_sec != null ? v.length_sec :
         (v.length_min != null ? Math.round(Number(v.length_min) * 60) : 0);
       push({
         id: 'ep_' + id,
         title: String(v.title || 'Eporner 视频').slice(0, 80),
-        thumb: String(thumb || ''),
+        thumb: thumb,
         duration: svFormatDuration(len),
         durationSec: len,
         embedUrl: 'https://www.eporner.com/embed/' + encodeURIComponent(id),
@@ -472,24 +548,24 @@ function svNormalizeAdultItems(source, data) {
     let videos = [];
     if (data && Array.isArray(data.videos)) videos = data.videos;
     else if (data && data.videos && Array.isArray(data.videos.video)) videos = data.videos.video;
+    else if (data && Array.isArray(data.video)) videos = data.video;
     else if (Array.isArray(data)) videos = data;
 
     for (let i = 0; i < videos.length; i++) {
       const v = videos[i] || {};
-      let key = String(v.video_id || v.vkey || v.viewkey || '').trim();
+      let key = String(v.video_id || v.vkey || v.viewkey || v.id || '').trim();
       if (!key && v.url) {
         const m = String(v.url).match(/[?&]viewkey=([^&#]+)/i);
         if (m) key = decodeURIComponent(m[1]);
       }
       if (!key) continue;
-      const thumb = v.thumb || v.default_thumb || v.thumbnail ||
-        (v.thumbs && v.thumbs[0]) || '';
+      const thumb = svPickThumbUrl(v);
       const len = v.duration != null ? v.duration :
         (v.length != null ? v.length : 0);
       push({
         id: 'ph_' + key,
         title: String(v.title || 'Pornhub 视频').slice(0, 80),
-        thumb: String(thumb || ''),
+        thumb: thumb,
         duration: typeof len === 'string' ? len : svFormatDuration(len),
         durationSec: typeof len === 'number' ? len : 0,
         embedUrl: 'https://www.pornhub.com/embed/' + encodeURIComponent(key) + '?autoplay=1',
@@ -796,7 +872,6 @@ function svEnsureStyle() {
 }
 .etc-sv-card-thumb img {
   width: 100%; height: 100%; object-fit: cover; display: block; border: 0;
-  referrerpolicy: no-referrer;
 }
 .etc-sv-card-dur {
   position: absolute; right: 6px; bottom: 6px; font-size: 10px; font-weight: 700;
@@ -1475,6 +1550,7 @@ function svNextYoutube(delta) {
 /* —— 成人片源：卡片列表 —— */
 
 function svRenderAdultCards(list) {
+  svEnsureNoReferrerMeta();
   const els = svEls();
   if (!els.cards) return;
   els.cards.innerHTML = '';
@@ -1488,21 +1564,33 @@ function svRenderAdultCards(list) {
     btn.type = 'button';
     btn.className = 'etc-sv-card';
     btn.dataset.index = String(i);
-    btn.innerHTML =
-      '<div class="etc-sv-card-thumb">' +
-        (item.thumb
-          ? '<img src="' + String(item.thumb).replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" />'
-          : '') +
-        '<span class="etc-sv-card-dur">' + (item.duration || '') + '</span>' +
-      '</div>' +
-      '<div class="etc-sv-card-body">' +
-        '<div class="etc-sv-card-title"></div>' +
-        '<div class="etc-sv-card-src"></div>' +
-      '</div>';
-    const titleEl = btn.querySelector('.etc-sv-card-title');
-    const srcEl = btn.querySelector('.etc-sv-card-src');
-    if (titleEl) titleEl.textContent = item.title || '视频';
-    if (srcEl) srcEl.textContent = (item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 点播';
+
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'etc-sv-card-thumb';
+    const thumbUrl = svPickThumbUrl(item) || String(item.thumb || '').trim();
+    if (thumbUrl && thumbUrl.indexOf('[object') < 0) {
+      const img = document.createElement('img');
+      svAttachNoReferrerImg(img, thumbUrl);
+      thumbWrap.appendChild(img);
+    }
+    const dur = document.createElement('span');
+    dur.className = 'etc-sv-card-dur';
+    dur.textContent = item.duration || '';
+    thumbWrap.appendChild(dur);
+
+    const body = document.createElement('div');
+    body.className = 'etc-sv-card-body';
+    const titleEl = document.createElement('div');
+    titleEl.className = 'etc-sv-card-title';
+    titleEl.textContent = item.title || '视频';
+    const srcEl = document.createElement('div');
+    srcEl.className = 'etc-sv-card-src';
+    srcEl.textContent = (item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 点播';
+    body.appendChild(titleEl);
+    body.appendChild(srcEl);
+
+    btn.appendChild(thumbWrap);
+    btn.appendChild(body);
     els.cards.appendChild(btn);
   }
 }
@@ -1520,6 +1608,7 @@ function svPlayAdultAt(index) {
 }
 
 async function svOpenAdultBrowse(forceReload, searchKw) {
+  svEnsureNoReferrerMeta();
   if (svState.adultLoading) {
     svShowHint('加载中…');
     return;

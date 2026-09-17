@@ -1,6 +1,6 @@
 /**
  * 八条猫 · 漫画 Manga（MangaDex 开放源）
- * - 原生 CORS：直接 fetch https://api.mangadex.org
+ * - 多网关直连：api.mangadex.org → api.mangadex.network → mangadex.org/api
  * - 中文可用资源优先（zh / zh-hk）
  * - 搜索 / 热门 / 章节 / 竖向瀑布流阅读
  *
@@ -9,8 +9,14 @@
 
 const PICA_ROOT_ID = 'picacg-main-container';
 const PICA_STYLE_ID = 'eight-tail-manga-style-v1';
-const MD_API = 'https://api.mangadex.org';
 const MD_COVERS = 'https://uploads.mangadex.org/covers';
+/* MangaDex 直连网关链：免第三方 CORS 代理，失败自动降级 */
+const MANGADEX_GATEWAYS = [
+  'https://api.mangadex.org',
+  'https://api.mangadex.network',
+  'https://mangadex.org/api',
+];
+const MD_API = MANGADEX_GATEWAYS[0];
 /* 默认 API 不返回 pornographic，必须显式声明全部 contentRating */
 const MD_CONTENT_RATINGS = [
   'contentRating[]=safe',
@@ -505,7 +511,7 @@ function mdBuildMangaListQs(opts) {
 async function mdEnsureDoujinshiTag() {
   if (mdDoujinshiTagId) return mdDoujinshiTagId;
   try {
-    const tags = await mdFetchJson(MD_API + '/manga/tag');
+    const tags = await fetchMangaDex('/manga/tag');
     const list = (tags && tags.data) || [];
     const hit = list.find(function (t) {
       const name = t && t.attributes && t.attributes.name;
@@ -517,26 +523,61 @@ async function mdEnsureDoujinshiTag() {
   return mdDoujinshiTagId;
 }
 
-async function mdFetchJson(url) {
-  const res = await fetch(url, {
-    method: 'GET',
-    credentials: 'omit',
-    cache: 'no-store',
-    mode: 'cors',
-    headers: { accept: 'application/json' },
+/**
+ * 多网关兜底请求 MangaDex（直连，无第三方代理）
+ * @param {string} endpoint 如 `/manga?limit=20` 或完整 URL
+ */
+async function fetchMangaDex(endpoint) {
+  let ep = String(endpoint || '').trim();
+  if (!ep) throw new Error('空 endpoint');
+  /* 若传入完整 URL，抽出 path+query */
+  MANGADEX_GATEWAYS.forEach(function (base) {
+    const b = base.replace(/\/$/, '');
+    if (ep.indexOf(b) === 0) ep = ep.slice(b.length) || '/';
   });
-  const text = await res.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch (_) {
-    throw new Error('非 JSON 响应 HTTP ' + res.status + (text ? '：' + text.slice(0, 100) : ''));
+  if (/^https?:\/\//i.test(ep)) {
+    try {
+      const u = new URL(ep);
+      ep = u.pathname + u.search;
+    } catch (_) {}
   }
-  if (!res.ok) {
-    const msg = (data && (data.message || data.result)) || ('HTTP ' + res.status);
-    throw new Error(String(msg));
+  if (ep.charAt(0) !== '/') ep = '/' + ep;
+
+  let lastErr = null;
+  for (let i = 0; i < MANGADEX_GATEWAYS.length; i++) {
+    const base = MANGADEX_GATEWAYS[i].replace(/\/$/, '');
+    const url = base + ep;
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        mode: 'cors',
+        headers: { Accept: 'application/json' },
+      });
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (_) {
+        throw new Error('非 JSON 响应 HTTP ' + res.status + (text ? '：' + String(text).slice(0, 80) : ''));
+      }
+      if (res.ok) return data;
+      lastErr = new Error(
+        ((data && (data.message || data.result)) || ('HTTP ' + res.status)) + ' · ' + base
+      );
+      console.warn('[Manga] Gateway ' + base + ' failed, trying next...', lastErr);
+    } catch (err) {
+      lastErr = err;
+      console.warn('[Manga] Gateway ' + base + ' failed, trying next...', err);
+    }
   }
-  return data;
+  throw lastErr || new Error('所有漫画网关请求均失败');
+}
+
+/** @deprecated 兼容旧调用，统一走 fetchMangaDex */
+async function mdFetchJson(urlOrEndpoint) {
+  return fetchMangaDex(urlOrEndpoint);
 }
 
 function mdPickTitle(attributes) {
@@ -605,7 +646,7 @@ async function picaLoadHot() {
   picaSetStatus(els.browseStatus, '加载热门推荐…', true);
   try {
     const qs = mdBuildMangaListQs({ orderFollowed: true });
-    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    const data = await fetchMangaDex('/manga?' + qs);
     picaState.comics = mdNormalizeMangaList(data);
     picaRenderComics(picaState.comics);
     picaSetStatus(els.browseStatus, '热门 · ' + picaState.comics.length + ' 部（含全部分级）', false);
@@ -621,7 +662,7 @@ async function picaLoadDoujin() {
   try {
     await mdEnsureDoujinshiTag();
     const qs = mdBuildMangaListQs({ orderFollowed: true, doujinOnly: true });
-    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    const data = await fetchMangaDex('/manga?' + qs);
     picaState.comics = mdNormalizeMangaList(data);
     picaRenderComics(picaState.comics);
     picaSetStatus(els.browseStatus, '同人本 · ' + picaState.comics.length + ' 部', false);
@@ -660,7 +701,7 @@ async function picaSearch(keyword, opts) {
       doujinOnly: !!opts.doujinOnly,
       orderFollowed: !kw,
     });
-    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    const data = await fetchMangaDex('/manga?' + qs);
     picaState.comics = mdNormalizeMangaList(data);
     picaRenderComics(picaState.comics);
     const tip = opts.doujinOnly
@@ -685,7 +726,7 @@ async function picaOpenDetail(mangaId) {
     const cached = (picaState.comics || []).find(function (c) { return c.id === id; });
     let detail = cached || null;
     if (!detail) {
-      const one = await mdFetchJson(MD_API + '/manga/' + encodeURIComponent(id) + '?includes[]=cover_art');
+      const one = await fetchMangaDex('/manga/' + encodeURIComponent(id) + '?includes[]=cover_art');
       const normalized = mdNormalizeMangaList({ data: one && one.data ? [one.data] : [] });
       detail = normalized[0] || { id: id, title: '未命名', cover: '' };
     }
@@ -707,8 +748,8 @@ async function picaOpenDetail(mangaId) {
       '&order[chapter]=asc' +
       '&limit=100' +
       '&' + mdContentRatingQs();
-    const feed = await mdFetchJson(
-      MD_API + '/manga/' + encodeURIComponent(id) + '/feed?' + feedQs
+    const feed = await fetchMangaDex(
+      '/manga/' + encodeURIComponent(id) + '/feed?' + feedQs
     );
     const chapters = Array.isArray(feed && feed.data) ? feed.data : [];
     picaState.eps = chapters.map(function (ch) {
@@ -775,7 +816,7 @@ async function picaOpenReader(chapterId, title) {
   if (els.readerBar) els.readerBar.style.width = '0%';
 
   try {
-    const atHome = await mdFetchJson(MD_API + '/at-home/server/' + encodeURIComponent(cid));
+    const atHome = await fetchMangaDex('/at-home/server/' + encodeURIComponent(cid));
     const baseUrl = String((atHome && atHome.baseUrl) || '').replace(/\/$/, '');
     const chapter = (atHome && atHome.chapter) || {};
     const hash = chapter.hash || '';
