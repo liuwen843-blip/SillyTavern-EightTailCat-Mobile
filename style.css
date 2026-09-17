@@ -143,6 +143,7 @@
 }
 
 /* 短视频全屏沉浸：压过桌宠，强制占满视口 */
+#video-app-container,
 #eight-tail-short-video-root {
   position: fixed !important;
   inset: 0 !important;
@@ -167,13 +168,45 @@
   border-radius: 0 !important;
 }
 
-#eight-tail-short-video-root.is-open {
+#video-app-container.is-open:not(.picacg-hidden),
+#eight-tail-short-video-root.is-open:not(.picacg-hidden) {
   display: flex !important;
 }
 
+#video-app-container.picacg-hidden,
+#eight-tail-short-video-root.picacg-hidden {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  z-index: 0 !important;
+}
+
+#video-app-container,
+#video-app-container *,
 #eight-tail-short-video-root,
 #eight-tail-short-video-root * {
   pointer-events: auto !important;
+}
+
+#video-app-container.picacg-hidden,
+#video-app-container.picacg-hidden *,
+#eight-tail-short-video-root.picacg-hidden,
+#eight-tail-short-video-root.picacg-hidden * {
+  pointer-events: none !important;
+}
+
+#picacg-main-container {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100050 !important;
+  display: none !important;
+  flex-direction: column !important;
+  background: #0a0a0a !important;
+  pointer-events: auto !important;
+}
+
+#picacg-main-container.is-open {
+  display: flex !important;
 }
 
 #eight-tail-sv-video {
@@ -242,12 +275,18 @@
   display: none !important;
 }
 
+#video-app-container.mode-embed #eight-tail-sv-embed,
+#video-app-container.mode-adult #eight-tail-sv-embed,
+#video-app-container.mode-youtube #eight-tail-sv-embed,
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-embed,
 #eight-tail-short-video-root.mode-adult #eight-tail-sv-embed,
 #eight-tail-short-video-root.mode-youtube #eight-tail-sv-embed {
   display: block !important;
 }
 
+#video-app-container.mode-embed #eight-tail-sv-video,
+#video-app-container.mode-adult #eight-tail-sv-video,
+#video-app-container.mode-youtube #eight-tail-sv-video,
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-video,
 #eight-tail-short-video-root.mode-adult #eight-tail-sv-video,
 #eight-tail-short-video-root.mode-youtube #eight-tail-sv-video {

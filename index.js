@@ -6,6 +6,8 @@ import {
   toggleShortVideoPlayer,
   isShortVideoOpen,
   pauseMuteShortVideoPlayer,
+  hideVideoAppForPicacg,
+  showVideoAppAfterPicacg,
 } from './short-video.js';
 import {
   openPicacgApp,
@@ -448,7 +450,7 @@ function bindHostListenersOnce() {
       data.type === 'eight-tail-open-picacg' ||
       data.type === 'eighttailcat-open-picacg'
     ) {
-      try { pauseMuteShortVideoPlayer(); } catch (_) {}
+      try { hideVideoAppForPicacg(); } catch (_) {}
       openPicacgApp();
       return;
     }
@@ -457,6 +459,7 @@ function bindHostListenersOnce() {
       data.type === 'eighttailcat-close-picacg'
     ) {
       closePicacgApp();
+      try { showVideoAppAfterPicacg(); } catch (_) {}
       return;
     }
     if (
@@ -1021,6 +1024,8 @@ try {
   window.closeShortVideoPlayer = closeShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
   window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
+  window.hideVideoAppForPicacg = hideVideoAppForPicacg;
+  window.showVideoAppAfterPicacg = showVideoAppAfterPicacg;
   window.openPicacgApp = openPicacgApp;
   window.closePicacgApp = closePicacgApp;
   window.togglePicacgApp = togglePicacgApp;

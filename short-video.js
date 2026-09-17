@@ -5,8 +5,9 @@
  * - 无 B站；关闭立刻清空 iframe，杜绝漏声
  */
 
-const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v12';
+const SV_ROOT_ID = 'video-app-container';
+const SV_ROOT_LEGACY_ID = 'eight-tail-short-video-root';
+const SV_STYLE_ID = 'eight-tail-sv-style-v13';
 const SV_OPEN_GUARD_MS = 550;
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode';
 const SV_YT_IDX_LS_KEY = 'eight_tail_short_video_yt_idx';
@@ -135,6 +136,8 @@ let svState = {
   browseOpen: false,
   searchOpen: false,
   ytConfigOpen: false,
+  gesturesSuspended: false,
+  hiddenForPicacg: false,
   lastSearchKw: '',
 };
 
@@ -545,7 +548,8 @@ function svEnsureStyle() {
   }
   ['eight-tail-sv-style', 'eight-tail-sv-style-v4', 'eight-tail-sv-style-v5',
     'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8',
-    'eight-tail-sv-style-v9', 'eight-tail-sv-style-v10', 'eight-tail-sv-style-v11'].forEach(function (id) {
+    'eight-tail-sv-style-v9', 'eight-tail-sv-style-v10', 'eight-tail-sv-style-v11',
+    'eight-tail-sv-style-v12'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -553,6 +557,7 @@ function svEnsureStyle() {
   });
 
   style.textContent = `
+#video-app-container,
 #eight-tail-short-video-root {
   position: fixed !important; inset: 0 !important; width: 100vw !important; height: 100dvh !important;
   margin: 0 !important; padding: 0 !important; background: #000 !important; z-index: 100002 !important;
@@ -561,8 +566,23 @@ function svEnsureStyle() {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   user-select: none; box-sizing: border-box !important;
 }
-#eight-tail-short-video-root.is-open { display: flex !important; }
+#video-app-container.is-open:not(.picacg-hidden),
+#eight-tail-short-video-root.is-open:not(.picacg-hidden) { display: flex !important; }
+#video-app-container.picacg-hidden,
+#eight-tail-short-video-root.picacg-hidden {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  z-index: 0 !important;
+}
+#video-app-container, #video-app-container *,
 #eight-tail-short-video-root, #eight-tail-short-video-root * { pointer-events: auto !important; box-sizing: border-box; }
+#video-app-container.picacg-hidden,
+#video-app-container.picacg-hidden *,
+#eight-tail-short-video-root.picacg-hidden,
+#eight-tail-short-video-root.picacg-hidden * {
+  pointer-events: none !important;
+}
 #eight-tail-sv-toolbar {
   position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important;
   z-index: 40 !important; display: flex !important; justify-content: flex-end !important; gap: 8px !important;
@@ -604,7 +624,7 @@ function svEnsureStyle() {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
 }
-#eight-tail-short-video-root.search-open #eight-tail-sv-search-panel {
+#video-app-container.search-open #eight-tail-sv-search-panel, #eight-tail-short-video-root.search-open #eight-tail-sv-search-panel {
   display: block !important;
 }
 #eight-tail-sv-search-row {
@@ -645,7 +665,7 @@ function svEnsureStyle() {
   user-select: text !important;
   -webkit-user-select: text !important;
 }
-#eight-tail-short-video-root.yt-config-open #eight-tail-sv-yt-config {
+#video-app-container.yt-config-open #eight-tail-sv-yt-config, #eight-tail-short-video-root.yt-config-open #eight-tail-sv-yt-config {
   display: block !important;
 }
 #eight-tail-sv-yt-config-title {
@@ -740,17 +760,17 @@ function svEnsureStyle() {
   position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important;
   border: none !important; background: #000 !important; display: none !important; z-index: 3 !important;
 }
-#eight-tail-short-video-root.mode-embed #eight-tail-sv-video { display: none !important; }
-#eight-tail-short-video-root.mode-embed #eight-tail-sv-embed { display: block !important; }
-#eight-tail-short-video-root.browse-open #eight-tail-sv-embed,
-#eight-tail-short-video-root.browse-open #eight-tail-sv-video { display: none !important; }
+#video-app-container.mode-embed #eight-tail-sv-video, #eight-tail-short-video-root.mode-embed #eight-tail-sv-video { display: none !important; }
+#video-app-container.mode-embed #eight-tail-sv-embed, #eight-tail-short-video-root.mode-embed #eight-tail-sv-embed { display: block !important; }
+#video-app-container.browse-open #eight-tail-sv-embed, #eight-tail-short-video-root.browse-open #eight-tail-sv-embed,
+#video-app-container.browse-open #eight-tail-sv-video, #eight-tail-short-video-root.browse-open #eight-tail-sv-video { display: none !important; }
 #eight-tail-sv-browse {
   display: none !important; position: absolute !important; inset: 0 !important; z-index: 6 !important;
   overflow-y: auto !important; -webkit-overflow-scrolling: touch !important;
   padding: 8px 12px 80px !important; background: rgba(8,8,12,.96) !important;
   touch-action: pan-y !important;
 }
-#eight-tail-short-video-root.browse-open #eight-tail-sv-browse { display: block !important; }
+#video-app-container.browse-open #eight-tail-sv-browse, #eight-tail-short-video-root.browse-open #eight-tail-sv-browse { display: block !important; }
 #eight-tail-sv-browse-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 10px; font-size: 13px; font-weight: 700;
@@ -800,7 +820,7 @@ function svEnsureStyle() {
   z-index: 12 !important; display: flex !important; flex-direction: column !important;
   align-items: center !important; gap: 14px !important;
 }
-#eight-tail-short-video-root.browse-open #eight-tail-sv-rail { display: none !important; }
+#video-app-container.browse-open #eight-tail-sv-rail, #eight-tail-short-video-root.browse-open #eight-tail-sv-rail { display: none !important; }
 .etc-sv-rail-btn {
   width: 52px !important; min-height: 52px !important; border: 0 !important; border-radius: 50% !important;
   background: rgba(0,0,0,.45) !important; color: #fff !important; display: flex !important;
@@ -821,7 +841,7 @@ function svEnsureStyle() {
   bottom: max(72px, calc(12% + env(safe-area-inset-bottom)));
   z-index: 10; pointer-events: none !important; text-shadow: 0 1px 4px rgba(0,0,0,.75);
 }
-#eight-tail-short-video-root.browse-open #eight-tail-sv-meta { display: none !important; }
+#video-app-container.browse-open #eight-tail-sv-meta, #eight-tail-short-video-root.browse-open #eight-tail-sv-meta { display: none !important; }
 #eight-tail-sv-author { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
 #eight-tail-sv-title { font-size: 13px; opacity: .92; line-height: 1.4; }
 #eight-tail-sv-status-bar {
@@ -830,7 +850,7 @@ function svEnsureStyle() {
   font-size: 11px !important; opacity: .7 !important; pointer-events: none !important;
   text-align: center !important;
 }
-#eight-tail-short-video-root.browse-open #eight-tail-sv-status-bar { display: none !important; }
+#video-app-container.browse-open #eight-tail-sv-status-bar, #eight-tail-short-video-root.browse-open #eight-tail-sv-status-bar { display: none !important; }
 `;
 }
 
@@ -845,14 +865,63 @@ function svForceRootCss(root) {
 }
 
 function svGetRoot() {
-  return document.getElementById(SV_ROOT_ID);
+  return document.getElementById(SV_ROOT_ID) ||
+    document.getElementById(SV_ROOT_LEGACY_ID);
+}
+
+function svHardStopMedia() {
+  const els = svEls();
+  svState.muted = true;
+  if (els.video) {
+    try { els.video.pause(); } catch (_) {}
+    try { els.video.muted = true; } catch (_) {}
+    try { els.video.removeAttribute('src'); els.video.load(); } catch (_) {}
+  }
+  if (els.embed) {
+    try { els.embed.src = 'about:blank'; } catch (_) {}
+    try { els.embed.removeAttribute('src'); } catch (_) {}
+  }
+  svSetBrowseOpen(false);
+  svSetSearchOpen(false);
+}
+
+/** 进入漫画：彻底隐藏视频层并注销手势 */
+export function hideVideoAppForPicacg() {
+  const root = svGetRoot();
+  svHardStopMedia();
+  svState.gesturesSuspended = true;
+  svState.hiddenForPicacg = true;
+  if (!root) return;
+  root.classList.add('picacg-hidden');
+  root.style.setProperty('display', 'none', 'important');
+  root.style.setProperty('pointer-events', 'none', 'important');
+  root.style.setProperty('visibility', 'hidden', 'important');
+  root.style.setProperty('z-index', '0', 'important');
+}
+
+/** 退出漫画：恢复视频层（若原本开着） */
+export function showVideoAppAfterPicacg() {
+  const root = svGetRoot();
+  svState.gesturesSuspended = false;
+  svState.hiddenForPicacg = false;
+  if (!root) return;
+  root.classList.remove('picacg-hidden');
+  root.style.removeProperty('visibility');
+  if (svState.open) {
+    root.style.setProperty('display', 'flex', 'important');
+    root.style.setProperty('pointer-events', 'auto', 'important');
+    root.style.setProperty('z-index', '100002', 'important');
+    root.classList.add('is-open');
+  } else {
+    root.style.setProperty('display', 'none', 'important');
+  }
 }
 
 function svBuildDom() {
   svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '12') {
+  if (root && root.dataset.svVersion === '13') {
     svForceRootCss(root);
     svSyncYtConfigUi(root);
     return root;
@@ -860,10 +929,15 @@ function svBuildDom() {
   if (root) {
     try { root.remove(); } catch (_) {}
   }
+  try {
+    const legacy = document.getElementById(SV_ROOT_LEGACY_ID);
+    if (legacy) legacy.remove();
+  } catch (_) {}
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '12';
+  root.dataset.svVersion = '13';
+  root.className = 'video-app-container';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
   root.setAttribute('aria-hidden', 'true');
@@ -1557,7 +1631,9 @@ function svOnAppDockClick(btn) {
   }
   if (app === 'picacg') {
     try {
-      if (typeof window.pauseMuteShortVideoPlayer === 'function') {
+      if (typeof window.hideVideoAppForPicacg === 'function') {
+        window.hideVideoAppForPicacg();
+      } else if (typeof window.pauseMuteShortVideoPlayer === 'function') {
         window.pauseMuteShortVideoPlayer();
       }
     } catch (_) {}
@@ -1654,10 +1730,22 @@ function svToggleLike() {
 function svIsPicacgTarget(el) {
   if (!el || !el.closest) return false;
   return !!(
+    el.closest('#picacg-main-container') ||
     el.closest('#picacg-modal-container') ||
     el.closest('#eight-tail-picacg-root') ||
     el.closest('.picacg-modal-container')
   );
+}
+
+function svGesturesBlocked(el) {
+  if (svState.gesturesSuspended || svState.hiddenForPicacg) return true;
+  if (svIsPicacgTarget(el)) return true;
+  try {
+    const pica = document.getElementById('picacg-main-container') ||
+      document.getElementById('picacg-modal-container');
+    if (pica && (pica.classList.contains('is-open') || pica.style.display === 'flex')) return true;
+  } catch (_) {}
+  return false;
 }
 
 function svIsInteractiveTarget(el) {
@@ -1862,7 +1950,7 @@ function svBindUi(root) {
   const stage = els.stage;
   if (stage) {
     stage.addEventListener('touchstart', function (e) {
-      if (svIsPicacgTarget(e.target)) return; // 漫画区域内的所有手势和点击，绝对不让短视频拦截
+      if (svGesturesBlocked(e.target)) return;
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (!e.touches || !e.touches.length) return;
       svState.moved = false;
@@ -1871,7 +1959,7 @@ function svBindUi(root) {
     }, { passive: true });
 
     stage.addEventListener('touchmove', function (e) {
-      if (svIsPicacgTarget(e.target)) return;
+      if (svGesturesBlocked(e.target)) return;
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       if (!e.touches || !e.touches.length) return;
@@ -1884,7 +1972,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('touchend', function (e) {
-      if (svIsPicacgTarget(e.target)) return;
+      if (svGesturesBlocked(e.target)) return;
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
@@ -1903,7 +1991,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('click', function (e) {
-      if (svIsPicacgTarget(e.target)) return;
+      if (svGesturesBlocked(e.target)) return;
       if (svIsInteractiveTarget(e.target)) return;
       if (svIsEmbedMode(svState.mode) || svState.browseOpen) return;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
@@ -1913,7 +2001,7 @@ function svBindUi(root) {
     });
 
     stage.addEventListener('wheel', function (e) {
-      if (svIsPicacgTarget(e.target)) return;
+      if (svGesturesBlocked(e.target)) return;
       if (!svState.open || svState.browseOpen) return;
       if (svIsInteractiveTarget(e.target)) return;
       e.preventDefault();
@@ -1923,20 +2011,9 @@ function svBindUi(root) {
   }
 
   root.addEventListener('pointerdown', function (e) {
-    if (svIsPicacgTarget(e.target)) return;
+    if (svGesturesBlocked(e.target)) return;
     if (svIsInteractiveTarget(e.target)) return;
     e.stopPropagation();
-  });
-  /* 根节点捕获阶段再挡一层：PicACG 打开时短视频不再吃手势 */
-  ['touchstart', 'touchmove', 'touchend'].forEach(function (evName) {
-    root.addEventListener(evName, function (e) {
-      if (svIsPicacgTarget(e.target)) return;
-      try {
-        const pica = document.getElementById('picacg-modal-container') ||
-          document.getElementById('eight-tail-picacg-root');
-        if (pica && pica.classList.contains('is-open')) return;
-      } catch (_) {}
-    }, { capture: true, passive: true });
   });
 }
 
@@ -1950,11 +2027,21 @@ export async function openShortVideoPlayer() {
     localStorage.removeItem('eight_tail_short_video_bvid');
   } catch (_) {}
 
+  /* 若漫画开着，先关掉（互斥） */
+  try {
+    if (typeof window.closePicacgApp === 'function' && typeof window.isPicacgOpen === 'function' && window.isPicacgOpen()) {
+      window.closePicacgApp();
+    }
+  } catch (_) {}
+
   const root = svBuildDom();
   try {
     if (root.parentElement !== document.body) document.body.appendChild(root);
   } catch (_) {}
 
+  svState.gesturesSuspended = false;
+  svState.hiddenForPicacg = false;
+  root.classList.remove('picacg-hidden');
   svForceRootCss(root);
   svState.muted = true;
   svArmClickGuard();
@@ -1962,6 +2049,10 @@ export async function openShortVideoPlayer() {
   const savedMode = svReadMode();
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
+  root.style.setProperty('display', 'flex', 'important');
+  root.style.setProperty('pointer-events', 'auto', 'important');
+  root.style.setProperty('visibility', 'visible', 'important');
+  root.style.setProperty('z-index', '100002', 'important');
   svState.open = true;
 
   setTimeout(function () {
@@ -2004,34 +2095,17 @@ export function closeShortVideoPlayer() {
 
 /** 打开漫画时：暂停并静音，不关闭媒体中心 */
 export function pauseMuteShortVideoPlayer() {
-  const els = svEls();
-  svState.muted = true;
-  if (els.video) {
-    try { els.video.pause(); } catch (_) {}
-    try { els.video.muted = true; } catch (_) {}
-  }
-  if (els.embed && els.embed.contentWindow) {
-    try {
-      els.embed.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
-        '*'
-      );
-      els.embed.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'mute', args: '' }),
-        '*'
-      );
-    } catch (_) {}
-  }
+  svHardStopMedia();
   svUpdateChrome();
 }
 
 export function toggleShortVideoPlayer() {
-  if (svState.open) closeShortVideoPlayer();
+  if (svState.open && !svState.hiddenForPicacg) closeShortVideoPlayer();
   else openShortVideoPlayer();
 }
 
 export function isShortVideoOpen() {
-  return !!svState.open;
+  return !!svState.open && !svState.hiddenForPicacg;
 }
 
 try {
@@ -2040,6 +2114,8 @@ try {
   window.toggleShortVideoPlayer = toggleShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
   window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
+  window.hideVideoAppForPicacg = hideVideoAppForPicacg;
+  window.showVideoAppAfterPicacg = showVideoAppAfterPicacg;
   window.__etcPlayYoutube = svOpenYoutubeFeed;
   window.__etcPlayPornhub = function () { svOpenAdultBrowse(true); };
 } catch (_) {}

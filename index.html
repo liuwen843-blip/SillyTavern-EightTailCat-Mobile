@@ -3820,7 +3820,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="打开/收起应用与媒体中心" aria-label="打开或收起应用面板" data-hub-only="1">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="单击：短视频 · 双击：PicACG 漫画 · 长按：简报" aria-label="单击短视频，双击漫画" data-hub-only="1">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -3945,7 +3945,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：点 📱 开关应用面板；面板内点 PicACG 看漫画；长按 📱 可生成今日简报。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击 📱 开短视频；双击 📱 开 PicACG；长按可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -3966,7 +3966,7 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用与媒体中心</h3>
-        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / PicACG / 抖音小红书<br />桌宠 📱 单击开关本面板</p>
+        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / PicACG / 抖音小红书<br />桌宠 📱 单击短视频 · 双击漫画</p>
         <div id="app-hub-grid" aria-label="应用列表">
           <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
             <span class="app-emoji" aria-hidden="true">▶</span>
@@ -12846,6 +12846,16 @@
 
       function requestOpenPicacg() {
         try {
+          if (window.parent && window.parent !== window && typeof window.parent.hideVideoAppForPicacg === "function") {
+            window.parent.hideVideoAppForPicacg();
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.hideVideoAppForPicacg === "function") {
+            window.hideVideoAppForPicacg();
+          }
+        } catch (_) {}
+        try {
           if (window.parent && window.parent !== window && typeof window.parent.pauseMuteShortVideoPlayer === "function") {
             window.parent.pauseMuteShortVideoPlayer();
           }
@@ -12878,6 +12888,26 @@
           }
         } catch (_) {}
         return false;
+      }
+
+      function openVideoMediaCenter() {
+        try { closeNewsBriefModal(); } catch (_) {}
+        const memoPanelEl = document.getElementById("memo-panel");
+        if (memoPanelEl) memoPanelEl.classList.remove("open");
+        toggleMediaHub();
+        markActivity();
+      }
+
+      function openPicacgMangaCenter() {
+        try { closeNewsBriefModal(); } catch (_) {}
+        const memoPanelEl = document.getElementById("memo-panel");
+        if (memoPanelEl) memoPanelEl.classList.remove("open");
+        if (requestOpenPicacg()) {
+          try { showToast("PicACG 漫画", 1000); } catch (_) {}
+        } else {
+          try { showToast("PicACG 未加载，请刷新扩展", 1800); } catch (_) {}
+        }
+        markActivity();
       }
 
       function openAppHubModalLocal() {
@@ -13038,6 +13068,16 @@
 
         if (actionType === "open-picacg" || app === "picacg") {
           function openHostPicacg() {
+            try {
+              if (window.parent && window.parent !== window && typeof window.parent.hideVideoAppForPicacg === "function") {
+                window.parent.hideVideoAppForPicacg();
+              }
+            } catch (_) {}
+            try {
+              if (typeof window.hideVideoAppForPicacg === "function") {
+                window.hideVideoAppForPicacg();
+              }
+            } catch (_) {}
             try {
               if (window.parent && window.parent !== window && typeof window.parent.openPicacgApp === "function") {
                 window.parent.openPicacgApp();
@@ -13687,11 +13727,14 @@
         if (!memoBtn || !memoPanel) return;
 
         const CAPSULE_LONG_MS = 800;
+        const PHONE_DBLCLICK_MS = 280;
         let pressAt = 0;
         let longFired = false;
         let dragMode = false;
         let moved = false;
         let holdTimer = null;
+        let phoneClickTimer = null;
+        let phoneClickCount = 0;
         let startX = 0;
         let startY = 0;
         let originLeft = 0;
@@ -13705,6 +13748,36 @@
           if (holdTimer) {
             clearTimeout(holdTimer);
             holdTimer = null;
+          }
+        }
+
+        function clearPhoneClickTimer() {
+          if (phoneClickTimer) {
+            clearTimeout(phoneClickTimer);
+            phoneClickTimer = null;
+          }
+        }
+
+        function resetPhoneClickState() {
+          clearPhoneClickTimer();
+          phoneClickCount = 0;
+        }
+
+        /** 延时单双击拦截：第一击绝不立刻弹窗 */
+        function onPhoneShortTap() {
+          phoneClickCount += 1;
+          if (phoneClickCount === 1) {
+            phoneClickTimer = setTimeout(function () {
+              phoneClickTimer = null;
+              phoneClickCount = 0;
+              openVideoMediaCenter();
+            }, PHONE_DBLCLICK_MS);
+            return;
+          }
+          if (phoneClickCount >= 2) {
+            clearPhoneClickTimer();
+            phoneClickCount = 0;
+            openPicacgMangaCenter();
           }
         }
 
@@ -13757,6 +13830,7 @@
             holdTimer = null;
             if (dragMode || moved) return;
             longFired = true;
+            resetPhoneClickState();
             try {
               if (navigator.vibrate) navigator.vibrate(18);
             } catch (_) {}
@@ -13774,6 +13848,7 @@
             dragMode = true;
             moved = true;
             clearHoldTimer();
+            resetPhoneClickState();
             memoBtn.style.animation = "none";
           }
           if (!dragMode) return;
@@ -13797,14 +13872,16 @@
           activePointerId = null;
           memoBtn.style.animation = "";
           if (wasDrag) {
+            resetPhoneClickState();
             saveCapsuleDrag();
             return;
           }
-          if (wasLong) return;
-          /* 短按：仅开关应用/媒体面板，严禁双击分支与外链 */
-          try { closeMemo(); } catch (_) {}
-          toggleMediaHub();
-          markActivity();
+          if (wasLong) {
+            resetPhoneClickState();
+            return;
+          }
+          /* 短按：绝不立刻弹窗，走 280ms 单双击判定 */
+          onPhoneShortTap();
         }
 
         memoBtn.addEventListener("pointerup", endCapsulePress, true);
@@ -13818,6 +13895,7 @@
           e.stopPropagation();
         }, true);
 
+        /* 拦截原生 click：只做防冒泡，真正打开走 pointer 单双击判定 */
         memoBtn.addEventListener("click", function (e) {
           e.preventDefault();
           e.stopPropagation();
@@ -17095,7 +17173,9 @@
           el.closest("#news-brief-modal") ||
           el.closest("#clicker-modal") ||
           el.closest("#app-hub-modal") ||
+          el.closest("#video-app-container") ||
           el.closest("#eight-tail-short-video-root") ||
+          el.closest("#picacg-main-container") ||
           el.closest("#picacg-modal-container") ||
           el.closest("#eight-tail-picacg-root") ||
           el.closest("#food-btn") ||
