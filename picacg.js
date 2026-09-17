@@ -8,13 +8,29 @@
 const PICA_ROOT_ID = 'picacg-main-container';
 const PICA_STYLE_ID = 'eight-tail-picacg-style-v5';
 const PICA_TOKEN_LS = 'picacg_user_token';
-/* 网页版稳定反代节点（替代官方 App 域名，缓解 Failed to fetch） */
-const TARGET_API = 'https://go2778.com';
-const PICA_API_BASE = TARGET_API.replace(/\/?$/, '/') ;
+/* 官方 API + 网页反代节点 */
+const TARGET_API = 'https://picaapi.picacomic.com';
+const PICA_API_BASE = TARGET_API.replace(/\/?$/, '/');
 const PICA_API_BASES = [
+  'https://picaapi.picacomic.com/',
   'https://go2778.com/',
-  'https://picaapi.go2778.com/',
 ];
+/* 免 API Key 的开放 CORS 代理链（已移除失效的 corsproxy.io） */
+const CORS_PROXIES = [
+  {
+    name: 'codetabs',
+    build: function (url) {
+      return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
+    },
+  },
+  {
+    name: 'allorigins',
+    build: function (url) {
+      return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+    },
+  },
+];
+const PICA_FETCH_TIMEOUT_MS = 12000;
 /* 通用逆向静态密钥（开源客户端通用） */
 const PICA_API_KEY = 'C69BAF41DA5ABD1FFEDC6D2FEA56B';
 const PICA_SECRET = '~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn';
@@ -104,26 +120,32 @@ function picaEnsureCryptoJs() {
 }
 
 /**
- * 优先通过 CORS 代理中转，规避浏览器跨域拦截
+ * 组装目标 API 直连 URL
  * @param {string} path 相对路径（可带 query）
  * @param {string} [base] API 根地址
  */
-function buildProxyUrl(path, base) {
-  const api = String(base || TARGET_API).replace(/\/$/, '');
-  const p = String(path || '');
-  const direct = api + (p.startsWith('/') ? p : '/' + p);
-  return 'https://corsproxy.io/?' + encodeURIComponent(direct);
-}
-
 function picaDirectUrl(path, base) {
   const api = String(base || TARGET_API).replace(/\/$/, '');
   const p = String(path || '');
   return api + (p.startsWith('/') ? p : '/' + p);
 }
 
+/**
+ * 通过免 Key CORS 代理包装目标 URL
+ * @param {string} directUrl 完整目标地址
+ * @param {{name:string,build:function(string):string}} proxy
+ */
+function buildCorsProxyUrl(directUrl, proxy) {
+  if (!proxy || typeof proxy.build !== 'function') return directUrl;
+  return proxy.build(directUrl);
+}
+
 function picaFormatError(err, context) {
   const raw = err && err.message != null ? String(err.message) : String(err || '未知错误');
   const prefix = context || '请求失败';
+  if (/aborted|timeout|TimeoutError/i.test(raw)) {
+    return prefix + '：请求超时，已尝试切换下一代理/节点。';
+  }
   if (/Failed to fetch|NetworkError|Load failed|CORS|Network request failed/i.test(raw)) {
     return prefix + '：网络/跨域被拦截（' + raw + '）。请检查 Token、代理或节点是否可用。';
   }
@@ -139,6 +161,29 @@ function picaFormatError(err, context) {
   return prefix + '：' + raw;
 }
 
+async function picaFetchWithTimeout(url, options, timeoutMs) {
+  const ms = timeoutMs || PICA_FETCH_TIMEOUT_MS;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timer = null;
+  const opts = Object.assign({}, options || {});
+  if (ctrl) opts.signal = ctrl.signal;
+  try {
+    if (ctrl) {
+      timer = setTimeout(function () {
+        try { ctrl.abort(); } catch (_) {}
+      }, ms);
+    }
+    return await fetch(url, opts);
+  } catch (e) {
+    if (e && (e.name === 'AbortError' || /abort/i.test(String(e && e.message)))) {
+      throw new Error('超时 ' + ms + 'ms');
+    }
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /**
  * 生成哔咔请求头（HMAC-SHA256 + Token）
  * @param {string} pathOrUrl 相对路径或完整 URL
@@ -148,7 +193,7 @@ function picaFormatError(err, context) {
 async function getPicacgHeaders(pathOrUrl, method, token) {
   const m = String(method || 'GET').toUpperCase();
   let path = String(pathOrUrl || '');
-  PICA_API_BASES.concat([PICA_API_BASE, 'https://picaapi.picacomic.com/']).forEach(function (base) {
+  PICA_API_BASES.concat([PICA_API_BASE, 'https://picaapi.go2778.com/']).forEach(function (base) {
     if (path.indexOf(base) === 0) path = path.slice(base.length);
   });
   path = path.replace(/^\//, '');
@@ -213,30 +258,36 @@ async function picaFetchJson(path, method, body) {
   const bodyStr = body != null ? JSON.stringify(body) : null;
 
   const attempts = [];
+
+  /* 节点 × 免 Key 代理链：失败/超时自动换下一个 */
   PICA_API_BASES.forEach(function (base) {
-    attempts.push({
-      name: 'corsproxy:' + base,
-      run: async function () {
-        const url = buildProxyUrl(rel, base);
-        const res = await fetch(url, {
-          method: m,
-          headers: headers,
-          body: bodyStr,
-          credentials: 'omit',
-          cache: 'no-store',
-          mode: 'cors',
-        });
-        return picaReadResponseJson(res, 'corsproxy+' + base);
-      },
+    const direct = picaDirectUrl(rel, base);
+    CORS_PROXIES.forEach(function (proxy) {
+      attempts.push({
+        name: proxy.name + ':' + base,
+        run: async function () {
+          const url = buildCorsProxyUrl(direct, proxy);
+          const res = await picaFetchWithTimeout(url, {
+            method: m,
+            headers: headers,
+            body: bodyStr,
+            credentials: 'omit',
+            cache: 'no-store',
+            mode: 'cors',
+          });
+          return picaReadResponseJson(res, proxy.name + '+' + base);
+        },
+      });
     });
   });
+
   /* 直连兜底（部分环境可能已放行） */
   PICA_API_BASES.forEach(function (base) {
     attempts.push({
       name: 'direct:' + base,
       run: async function () {
         const url = picaDirectUrl(rel, base);
-        const res = await fetch(url, {
+        const res = await picaFetchWithTimeout(url, {
           method: m,
           headers: headers,
           body: bodyStr,
@@ -258,11 +309,11 @@ async function picaFetchJson(path, method, body) {
     } catch (e) {
       const tip = (e && e.message) ? e.message : String(e);
       errors.push(attempts[i].name + ' → ' + tip);
-      console.warn('[PicACG] 请求失败:', attempts[i].name, e);
+      console.warn('[PicACG] 请求失败，切换下一通道:', attempts[i].name, e);
     }
   }
   const summary = errors.length
-    ? ('全部节点/代理失败：' + errors.slice(0, 3).join(' | '))
+    ? ('全部节点/代理失败：' + errors.slice(0, 4).join(' | '))
     : '全部节点/代理失败';
   throw new Error(summary);
 }
