@@ -1,4 +1,4 @@
-/* 酒馆宿主层（移动触屏版）：强制 fixed 挂到 body，全视口可拖 */
+/* 酒馆宿主层（移动触屏版）：贴合猫咪尺寸，禁止全屏遮罩挡点击 */
 #pet-container-mobile {
   position: fixed !important;
   left: 0 !important;
@@ -6,22 +6,22 @@
   right: auto !important;
   bottom: auto !important;
   z-index: 9999 !important;
-  /* 只给猫咪本体区域尺寸，禁止 100vw/100vh 透明遮罩挡点击 */
-  width: min(280px, 72vw) !important;
-  height: min(360px, 55vh) !important;
+  width: min(160px, 42vw) !important;
+  height: min(200px, 48vw) !important;
   margin: 0 !important;
   padding: 0 !important;
-  pointer-events: auto;
+  /* 父层不拦截点击；由 iframe / 占位脸接收事件 */
+  pointer-events: none !important;
   background: transparent !important;
   border: 0 !important;
   overflow: visible !important;
+  display: block !important;
+  visibility: visible !important;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
   will-change: transform;
   transition: none !important;
-  /* 防止被酒馆父级 transform/filter 影响 fixed 基准 */
-  transform: translate3d(0, 0, 0);
 }
 
 #pet-container-mobile.is-dragging {
@@ -36,9 +36,13 @@
 
 #pet-container-mobile.eighttailcat-hidden {
   display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 #pet-container-mobile iframe {
+  position: relative;
+  z-index: 1;
   display: block;
   width: 100%;
   height: 100%;
@@ -46,7 +50,11 @@
   background: transparent !important;
   color-scheme: none;
   touch-action: none;
-  pointer-events: auto;
+  pointer-events: auto !important;
+}
+
+#eighttailcat-mobile-fallback {
+  pointer-events: none !important;
 }
 
 #eighttailcat-mobile-settings {
@@ -67,7 +75,7 @@
   touch-action: manipulation;
 }
 
-/* 右缘贴边猫爪悬浮球 */
+/* 右缘贴边猫爪：始终可点，一键唤回 */
 #eighttailcat-mobile-dock {
   position: fixed !important;
   right: 0 !important;
@@ -88,9 +96,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.78;
+  opacity: 0.85;
   cursor: grab;
   touch-action: none;
+  pointer-events: auto !important;
   -webkit-tap-highlight-color: transparent;
   box-shadow:
     -3px 2px 10px rgba(0, 0, 0, 0.28),
@@ -107,16 +116,12 @@
 }
 
 #eighttailcat-mobile-dock.is-collapsed {
-  opacity: 0.95;
-  background: rgba(91, 141, 239, 0.82);
+  opacity: 0.98;
+  background: rgba(91, 141, 239, 0.88);
 }
 
 #eighttailcat-mobile-dock.is-dragging {
   opacity: 1;
   cursor: grabbing;
   transition: none !important;
-}
-
-#eighttailcat-mobile-fab {
-  display: none !important;
 }

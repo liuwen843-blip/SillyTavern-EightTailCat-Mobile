@@ -52,6 +52,12 @@
       }
       window.CAT_IMG_IDLE = window.EXTENSION_BASE_PATH + "assets/cat1.png";
       window.CAT_IMG_BITE = window.EXTENSION_BASE_PATH + "assets/cat2.png";
+      document.addEventListener("DOMContentLoaded", function () {
+        try {
+          var img = document.getElementById("cat");
+          if (img && window.CAT_IMG_IDLE) img.src = window.CAT_IMG_IDLE;
+        } catch (_) {}
+      });
     })();
   </script>
   <!-- 由 main.py 本地 HTTP 注入（独立桌宠模式）；酒馆 iframe 下 404 可忽略 -->
@@ -190,8 +196,8 @@
       -webkit-user-select: none;
     }
 
-    body.hiding-cursor,
-    body.hiding-cursor * { cursor: none !important; }
+    /* 已废除咬鼠标藏光标：保留空规则避免旧 class 残留产生影响 */
+    body.hiding-cursor { cursor: auto !important; }
 
     #stage,
     #pet,
@@ -239,17 +245,40 @@
       top: 50% !important;
       width: min(238px, 82%);
     }
+    /* 酒馆 iframe：整页透明穿透，仅猫咪与控件可点，避免透明白板挡宿主 */
     html.st-extension-host,
-    html.st-extension-host body {
-      overscroll-behavior: none;
-      touch-action: manipulation;
+    html.st-extension-host body,
+    html.st-extension-host #stage {
+      pointer-events: none !important;
       background: transparent !important;
     }
-    html.st-extension-host #stage {
-      width: 100%;
-      height: 100%;
-      touch-action: none;
-      overscroll-behavior: none;
+    html.st-extension-host #pet,
+    html.st-extension-host #pet * {
+      pointer-events: auto;
+    }
+    html.st-extension-host #pet .action-btn,
+    html.st-extension-host #bubble,
+    html.st-extension-host #chat-spark,
+    html.st-extension-host #memo-btn,
+    html.st-extension-host #food-btn,
+    html.st-extension-host #game-btn,
+    html.st-extension-host #btn-pet-quit,
+    html.st-extension-host #cfg-modal,
+    html.st-extension-host #game-modal,
+    html.st-extension-host #app-hub-modal,
+    html.st-extension-host #feed-tray-modal,
+    html.st-extension-host #memo-panel,
+    html.st-extension-host #chat-panel,
+    html.st-extension-host .mobile-fullscreen-view {
+      pointer-events: auto !important;
+    }
+    /* 入场动画未完成时也强制可见，防止卡在 opacity:0 */
+    html.st-extension-host #pet.pre-enter,
+    html.st-extension-host #pet.entering {
+      opacity: 1 !important;
+      pointer-events: auto !important;
+      transform: translate(-50%, -50%) !important;
+      animation: none !important;
     }
 
 
@@ -3670,7 +3699,7 @@
   <div id="stage">
     <div id="pet" class="pre-enter classic-mode pet-float-wrapper">
       <div id="cat-wrap" class="pet-classic-hachikyu">
-        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" />
+        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" onerror="this.onerror=null;this.style.display='none';var f=document.getElementById('cat-fallback');if(f){f.hidden=false;f.style.display='flex';}" /><div id="cat-fallback" hidden aria-hidden="true" style="display:none;width:100%;aspect-ratio:1;align-items:center;justify-content:center;font-size:72px;line-height:1;border:2px dashed rgba(91,141,239,.5);border-radius:20px;background:rgba(255,255,255,.12);user-select:none;pointer-events:none;">🐱</div>
         <video id="pet-video" autoplay loop muted playsinline
           style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:none;"></video>
         <div id="bead-hat" aria-hidden="true"><img alt="" /></div>
@@ -10466,6 +10495,7 @@
         if (IS_SETTINGS_WINDOW) return;
         opts = opts || {};
         const allowBusyStates = !!opts.allowBusyStates;
+        if (state === BITING) { try { forceExitBiteCapture(); } catch (_) {} }
         if (!allowBusyStates && (state === BITING || state === THROWING)) return;
         if (speakBusy && !opts.force) return;
         speakBusy = true;
@@ -10496,7 +10526,8 @@
           if (result && result.source === "fallback" && result.hint && store.llmEnabled) {
             showToast(result.hint, 2400);
           }
-          if (!allowBusyStates && (state === BITING || state === THROWING)) return;
+          if (state === BITING) { try { forceExitBiteCapture(); } catch (_) {} }
+        if (!allowBusyStates && (state === BITING || state === THROWING)) return;
 
           const voiceJob = showBubble(line, {
             favoritable: true,
@@ -16086,6 +16117,9 @@
       const BITING = "biting";
       const THROWING = "throwing";
       let state = IDLE;
+      /* 硬开关：永远禁止进入咬住吸附态 */
+      const BITE_FOLLOW_DISABLED = true;
+      Object.defineProperty(window, "__PET_BITE_FOLLOW_DISABLED__", { value: true, writable: false });
 
       let dragging = false;
       let dragMoved = false;
@@ -16345,8 +16379,9 @@
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       }
 
-      /* 手机版废除「咬住光标并吸附跟随」；enterBite 仅作兼容转发 */
+      /* 咬鼠标已彻底废除：任何旧调用只走戳弄，绝不改 state / 追坐标 */
       function enterBite(x, y) {
+        try { forceExitBiteCapture(); } catch (_) {}
         pokePetReaction(x, y);
       }
 
@@ -16409,20 +16444,29 @@
       /** 清除可能残留的咬住吸附态（兼容旧会话 / 异常中断） */
       function forceExitBiteCapture() {
         state = IDLE;
+        dragging = false;
+        dragMoved = false;
+        petGestureActive = false;
+        touchMoved = false;
         biteClicks = 0;
         clearTimeout(biteClickTimer);
         clearShakeAmp();
         pet.classList.remove("biting", "throwing", "dragging", "moving-wiggle", "dizzy");
         body.classList.remove("hiding-cursor");
+        try { document.documentElement.classList.remove("hiding-cursor"); } catch (_) {}
         store = loadStore();
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           try { resolveVisualAfterTemp(); } catch (_) {}
         } else if (cat) {
-          cat.src = CAT_IMG_IDLE;
+          try { cat.src = CAT_IMG_IDLE || window.CAT_IMG_IDLE || "assets/cat1.png"; } catch (_) {}
         }
         if (window.bridge && window.bridge.setPetBusy) {
           try { window.bridge.setPetBusy(false); } catch (_) {}
         }
+        /* 若宿主仍认为在拖，补发 end，避免卡死 */
+        try {
+          if (isEmbeddedHost()) notifyStHost({ type: "eighttailcat-drag-end" });
+        } catch (_) {}
         pet.classList.add("floating");
       }
 
@@ -16461,33 +16505,13 @@
         reportHitRect();
       }
 
+      /* 咬鼠标/甩飞光标已废除：保留空壳避免旧调用报错 */
       function throwCursor() {
-        if (state !== BITING) return;
-        state = THROWING;
-        clearShakeAmp();
-        playWhoosh();
-        showBubble("💢 走开啦！", { favoritable: true, voice: true });
-        pet.classList.remove("biting", "floating");
-        pet.classList.add("throwing");
-        body.classList.remove("hiding-cursor");
-        if (window.bridge && window.bridge.flingSystemCursor) window.bridge.flingSystemCursor();
-        if (window.bridge && window.bridge.setPetBusy) window.bridge.setPetBusy(true);
-
-        function onEnd(e) {
-          if (e.animationName !== "throwAway") return;
-          pet.removeEventListener("animationend", onEnd);
-          pet.classList.remove("throwing");
-          resetIdle(true);
-        }
-        pet.addEventListener("animationend", onEnd);
+        try { forceExitBiteCapture(); } catch (_) {}
       }
 
       function registerBiteClick() {
-        if (state !== BITING) return;
-        biteClicks += 1;
-        clearTimeout(biteClickTimer);
-        biteClickTimer = setTimeout(function () { biteClicks = 0; }, BITE_CLICK_WINDOW);
-        if (biteClicks >= 5) throwCursor();
+        /* no-op：不再累计咬合点击 */
       }
 
       function reportHitRect() {
@@ -16762,9 +16786,13 @@
         };
       }
 
-      function beginPetDrag      function beginPetDrag(e, point) {
+      function beginPetDrag(e, point) {
         if (state === THROWING) return false;
         if (isUiChromeTarget(e.target)) return false;
+        /* 绝不进入 BITING：任何残留态先清掉 */
+        if (state === BITING) {
+          try { forceExitBiteCapture(); } catch (_) {}
+        }
         petGestureActive = true;
         touchMoved = false;
         touchStartX = point.x;
@@ -16806,6 +16834,7 @@
               screenY: point.sy
             });
           } else {
+            /* 非嵌入独立模式才在本页移动；酒馆 iframe 下禁止 placeAt（会被夹在小视口） */
             placeAt(originX, originY, false);
           }
         }
@@ -16910,6 +16939,23 @@
       /* 启动时清掉可能残留的咬住吸附 / 藏光标，防止挡点击 */
       try { forceExitBiteCapture(); } catch (_) {}
       try { body.classList.remove("hiding-cursor"); } catch (_) {}
+      try {
+        if (cat && window.CAT_IMG_IDLE) cat.src = window.CAT_IMG_IDLE;
+        cat.addEventListener("error", function () {
+          try {
+            cat.style.display = "none";
+            var f = document.getElementById("cat-fallback");
+            if (f) { f.hidden = false; f.style.display = "flex"; }
+          } catch (_) {}
+        });
+      } catch (_) {}
+      /* 保险：周期性清咬住态，防止异常路径再次卡住全屏 */
+      setInterval(function () {
+        try {
+          if (state === BITING) forceExitBiteCapture();
+          body.classList.remove("hiding-cursor");
+        } catch (_) {}
+      }, 1500);
 
       /* Esc：关闭设置（网页弹窗或 Qt 设置子窗）；猫窗无设置时 Esc 仍由 Python 处理退出 */
       window.addEventListener("keydown", function (e) {
@@ -16986,9 +17032,11 @@
       function playIntroEntrance() {
         store = loadStore();
         pet.classList.remove("floating", "entering");
-        if (store.introBounceEnabled === false) {
-          pet.classList.remove("pre-enter");
+        /* 酒馆 iframe：跳过弹跳入场，避免 opacity:0 卡死隐形 */
+        if (isEmbeddedHost() || store.introBounceEnabled === false) {
+          pet.classList.remove("pre-enter", "entering");
           pet.classList.add("floating");
+          introFinished = true;
           return;
         }
         /* 强制回流后再开启动画，确保从底部起跳 */
@@ -17006,7 +17054,9 @@
         pet.addEventListener("animationend", onEnd);
         /* 兜底：个别环境 animationend 丢失 */
         setTimeout(function () {
-          if (pet.classList.contains("entering")) finishIntroEntrance();
+          if (pet.classList.contains("entering") || pet.classList.contains("pre-enter")) {
+            finishIntroEntrance();
+          }
         }, 900);
       }
 
