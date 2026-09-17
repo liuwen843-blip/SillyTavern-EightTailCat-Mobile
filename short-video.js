@@ -308,27 +308,35 @@ function svEnsureStyle() {
 }
 #eight-tail-sv-author { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
 #eight-tail-sv-title { font-size: 13px; opacity: .92; line-height: 1.4; max-height: 3.2em; overflow: hidden; }
-#eight-tail-sv-panel {
-  position: absolute !important;
+#eight-tail-sv-panel,
+#video-source-panel {
+  position: relative !important;
+  z-index: 100005 !important;
   left: 0 !important; right: 0 !important; bottom: 0 !important;
-  z-index: 15 !important;
   display: none !important;
   flex-direction: column !important;
   gap: 8px !important;
+  margin-top: auto !important;
+  flex: 0 0 auto !important;
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom)) !important;
-  background: rgba(10,10,14,.94) !important;
+  background: rgba(10,10,14,.96) !important;
   border-top: 1px solid rgba(255,255,255,.1) !important;
   pointer-events: auto !important;
 }
-#eight-tail-short-video-root.panel-open #eight-tail-sv-panel {
+#eight-tail-short-video-root.panel-open #eight-tail-sv-panel,
+#eight-tail-short-video-root.panel-open #video-source-panel {
   display: flex !important;
 }
-#eight-tail-sv-panel label { font-size: 11px; opacity: .75; pointer-events: none !important; }
-#eight-tail-sv-api {
+#eight-tail-sv-panel label,
+#video-source-panel label { font-size: 11px; opacity: .75; pointer-events: none !important; }
+#eight-tail-sv-api,
+#video-source-panel input {
+  position: relative !important;
+  z-index: 100005 !important;
   width: 100% !important;
   border-radius: 10px !important;
   border: 1px solid rgba(255,255,255,.2) !important;
-  background: rgba(255,255,255,.1) !important;
+  background: rgba(255,255,255,.12) !important;
   color: #fff !important;
   padding: 10px 12px !important;
   font-size: 13px !important;
@@ -336,9 +344,13 @@ function svEnsureStyle() {
   pointer-events: auto !important;
   -webkit-user-select: text !important;
   user-select: text !important;
+  touch-action: manipulation !important;
 }
-#eight-tail-sv-actions { display: flex; gap: 8px; }
-#eight-tail-sv-actions button {
+#eight-tail-sv-actions { display: flex; gap: 8px; position: relative; z-index: 100005 !important; }
+#eight-tail-sv-actions button,
+#video-source-panel button {
+  position: relative !important;
+  z-index: 100005 !important;
   flex: 1 !important;
   border: 0 !important;
   border-radius: 10px !important;
@@ -347,6 +359,7 @@ function svEnsureStyle() {
   font-weight: 700 !important;
   cursor: pointer !important;
   pointer-events: auto !important;
+  touch-action: manipulation !important;
 }
 #eight-tail-sv-apply { background: #5b8def !important; color: #fff !important; }
 #eight-tail-sv-reset { background: rgba(255,255,255,.14) !important; color: #fff !important; }
@@ -402,7 +415,7 @@ function svGetRoot() {
 function svBuildDom() {
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '2') {
+  if (root && root.dataset.svVersion === '3') {
     svForceRootCss(root);
     return root;
   }
@@ -412,7 +425,7 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '2';
+  root.dataset.svVersion = '3';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频');
   root.setAttribute('aria-hidden', 'true');
@@ -422,21 +435,21 @@ function svBuildDom() {
     '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭短视频">×</button>',
     '</div>',
     '<div id="eight-tail-sv-stage">',
-    '  <video id="eight-tail-sv-video" playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5" x5-video-player-fullscreen="true" loop preload="auto"></video>',
+    '  <video id="eight-tail-sv-video" muted autoplay loop playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page" preload="auto"></video>',
     '  <div id="eight-tail-sv-hint">暂停</div>',
     '  <div id="eight-tail-sv-rail">',
     '    <div id="eight-tail-sv-avatar" aria-hidden="true">🐱</div>',
     '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-like"><span class="ico">♡</span><span class="n">赞</span></button>',
-    '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-mute"><span class="ico">🔇</span><span class="n">静音</span></button>',
+    '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-mute" title="点击开声音"><span class="ico">🔇</span><span class="n">静音</span></button>',
     '  </div>',
     '  <div id="eight-tail-sv-meta">',
     '    <div id="eight-tail-sv-author">@sample</div>',
     '    <div id="eight-tail-sv-title">短视频</div>',
     '  </div>',
     '</div>',
-    '<div id="eight-tail-sv-panel">',
+    '<div id="video-source-panel" class="eight-tail-sv-panel">',
     '  <label for="eight-tail-sv-api">自定义视频源 / API（JSON 数组或 mp4 直链）</label>',
-    '  <input id="eight-tail-sv-api" type="url" inputmode="url" placeholder="https://.../api 或 https://.../a.mp4" autocomplete="off" />',
+    '  <input id="eight-tail-sv-api" type="url" inputmode="url" placeholder="https://.../a.mp4 或 API 地址" autocomplete="off" />',
     '  <div id="eight-tail-sv-actions">',
     '    <button type="button" id="eight-tail-sv-apply">应用源</button>',
     '    <button type="button" id="eight-tail-sv-reset">恢复内置</button>',
@@ -469,7 +482,7 @@ function svEls(root) {
     reset: root.querySelector('#eight-tail-sv-reset'),
     status: root.querySelector('#eight-tail-sv-status'),
     stage: root.querySelector('#eight-tail-sv-stage'),
-    panel: root.querySelector('#eight-tail-sv-panel'),
+    panel: root.querySelector('#video-source-panel') || root.querySelector('#eight-tail-sv-panel'),
   };
 }
 
@@ -536,36 +549,89 @@ function svPreloadNext() {
   } catch (_) {}
 }
 
+function svPrepareVideoEl(v) {
+  if (!v) return;
+  v.muted = true;
+  v.defaultMuted = true;
+  v.autoplay = true;
+  v.loop = true;
+  v.playsInline = true;
+  v.setAttribute('muted', '');
+  v.setAttribute('autoplay', '');
+  v.setAttribute('loop', '');
+  v.setAttribute('playsinline', '');
+  v.setAttribute('webkit-playsinline', '');
+  v.setAttribute('x5-playsinline', '');
+  v.setAttribute('x5-video-player-type', 'h5-page');
+}
+
+function svTryPlay(v) {
+  if (!v) return;
+  /* 自动播放前强制静音，否则移动端一律拦截 */
+  v.muted = true;
+  svState.muted = true;
+  svWriteMuted(true);
+  svUpdateChrome();
+  const playPromise = v.play();
+  if (playPromise !== undefined && typeof playPromise.catch === 'function') {
+    playPromise.catch(function (err) {
+      console.warn('自动播放被拦截，需要手动点击播放:', err);
+      svSetStatus('点屏幕播放 · 点右侧喇叭开声音');
+    });
+  }
+}
+
 function svPlayCurrent() {
   const item = svCurrent();
   const els = svEls();
   if (!item || !els.video) return;
   svUpdateChrome();
   const v = els.video;
-  v.muted = !!svState.muted;
-  v.loop = true;
-  v.playsInline = true;
-  v.setAttribute('playsinline', '');
-  v.setAttribute('webkit-playsinline', '');
-  v.setAttribute('x5-playsinline', '');
-  if (v.getAttribute('src') !== item.url && v.src !== item.url) {
-    v.src = item.url;
-    try { v.load(); } catch (_) {}
-  }
-  const p = v.play();
-  if (p && typeof p.catch === 'function') {
-    p.catch(function () {
-      v.muted = true;
-      svState.muted = true;
-      svWriteMuted(true);
-      svUpdateChrome();
-      v.play().catch(function () {
-        svSetStatus('播放失败，请上滑换下一条或检查网络');
-      });
+  svPrepareVideoEl(v);
+  v.pause();
+  v.removeAttribute('src');
+  v.src = item.url;
+  try { v.load(); } catch (_) {}
+  svTryPlay(v);
+  /* 若用户之前选择开声，等首次 play 成功后再尝试取消静音需用户点击 —— 保持静音直到点喇叭 */
+  svPreloadNext();
+  svSetStatus((svState.index + 1) + ' / ' + svState.feed.length + ' · 上滑下一条 · 点喇叭开声');
+}
+
+function svApplyDirectUrl(newUrl) {
+  const els = svEls();
+  const video = els.video;
+  if (!video) return;
+  const item = {
+    id: 'custom-direct',
+    title: '自定义源',
+    author: '@custom',
+    url: newUrl,
+  };
+  svState.feed = [item].concat(
+    SV_BUILTIN_FEED.filter(function (x) { return x.url !== newUrl; })
+  );
+  svState.index = 0;
+  svPrepareVideoEl(video);
+  video.pause();
+  video.src = newUrl;
+  video.load();
+  /* 自动播放前强制静音，否则移动端一律拦截 */
+  video.muted = true;
+  const playPromise = video.play();
+  if (playPromise !== undefined && typeof playPromise.catch === 'function') {
+    playPromise.catch(function (err) {
+      console.warn('自动播放被拦截，需要手动点击播放:', err);
+      svSetStatus('已换源 · 点屏幕播放');
     });
   }
-  svPreloadNext();
-  svSetStatus((svState.index + 1) + ' / ' + svState.feed.length + ' · 上滑下一条 · 点按暂停');
+  svState.muted = true;
+  svWriteMuted(true);
+  svUpdateChrome();
+  svWriteCustomApi(newUrl);
+  svShowHint('已应用源');
+  svSetStatus('已应用源');
+  svSetPanelOpen(false);
 }
 
 function svGo(delta) {
@@ -580,28 +646,34 @@ function svGo(delta) {
   svShowHint(delta > 0 ? '下一条' : '上一条');
 }
 
+function svToggleMute() {
+  const v = svEls().video;
+  /* 用户手势下才允许开声 */
+  svState.muted = !svState.muted;
+  svWriteMuted(svState.muted);
+  if (v) {
+    v.muted = svState.muted;
+    if (!svState.muted) {
+      const p = v.play();
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    }
+  }
+  svUpdateChrome();
+  svShowHint(svState.muted ? '已静音' : '已开声音');
+}
+
 function svTogglePlay() {
   const v = svEls().video;
   if (!v) return;
   if (v.paused) {
+    /* 未开声前保持 muted，避免再次被拦截 */
+    if (svState.muted) v.muted = true;
     v.play().catch(function () {});
     svShowHint('播放');
   } else {
     v.pause();
     svShowHint('暂停');
   }
-}
-
-function svToggleMute() {
-  svState.muted = !svState.muted;
-  svWriteMuted(svState.muted);
-  const v = svEls().video;
-  if (v) {
-    v.muted = svState.muted;
-    if (!svState.muted) v.play().catch(function () {});
-  }
-  svUpdateChrome();
-  svShowHint(svState.muted ? '已静音' : '已开声音');
 }
 
 function svToggleLike() {
@@ -618,113 +690,168 @@ function svSetPanelOpen(on) {
   if (root) root.classList.toggle('panel-open', svState.panelOpen);
 }
 
+async function svOnApplySource() {
+  const els = svEls();
+  const raw = els.api ? String(els.api.value || '').trim() : '';
+  if (!raw) {
+    svShowHint('请先填写视频地址');
+    svSetStatus('输入框为空');
+    try { if (els.api) els.api.focus(); } catch (_) {}
+    return;
+  }
+  if (!/^https?:\/\//i.test(raw)) {
+    svShowHint('请填写 http(s) 链接');
+    svSetStatus('地址需以 http 开头');
+    return;
+  }
+  svWriteCustomApi(raw);
+
+  /* 直链 mp4/webm：立即换源播放 */
+  if (/\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(raw)) {
+    svApplyDirectUrl(raw);
+    return;
+  }
+
+  /* 其它 http：先当直链试播，同时尝试当 API 拉取列表 */
+  svApplyDirectUrl(raw);
+  try {
+    const feed = await svLoadFeedFromApi(raw);
+    if (feed && feed.length && feed[0] && feed[0].url && feed[0].url !== raw) {
+      svState.feed = feed;
+      svState.index = 0;
+      svPlayCurrent();
+      svShowHint('已应用源');
+      svSetStatus('已从 API 加载 ' + feed.length + ' 条');
+      svSetPanelOpen(false);
+    }
+  } catch (_) {}
+}
+
+function svIsInteractiveTarget(el) {
+  if (!el || !el.closest) return false;
+  return !!(
+    el.closest('#video-source-panel') ||
+    el.closest('#eight-tail-sv-panel') ||
+    el.closest('#eight-tail-sv-toolbar') ||
+    el.closest('#eight-tail-sv-rail') ||
+    el.closest('input') ||
+    el.closest('button') ||
+    el.closest('textarea') ||
+    el.closest('label') ||
+    el.closest('a')
+  );
+}
+
 function svBindUi(root) {
   if (root.dataset.bound === '1') return;
   root.dataset.bound = '1';
   const els = svEls(root);
 
-  function stop(e) {
+  function stopBubble(e) {
     try {
-      e.preventDefault();
       e.stopPropagation();
-      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
     } catch (_) {}
   }
 
   if (els.close) {
-    ['click', 'touchend'].forEach(function (evName) {
-      els.close.addEventListener(evName, function (e) {
-        stop(e);
-        closeShortVideoPlayer();
-      }, { passive: false });
+    els.close.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      closeShortVideoPlayer();
     });
   }
 
   if (els.gear) {
     els.gear.addEventListener('click', function (e) {
-      stop(e);
+      e.preventDefault();
+      stopBubble(e);
       svSetPanelOpen(!svState.panelOpen);
+      if (svState.panelOpen) {
+        setTimeout(function () {
+          try { if (els.api) els.api.focus(); } catch (_) {}
+        }, 50);
+      }
     });
-    els.gear.addEventListener('touchend', function (e) {
-      stop(e);
-      svSetPanelOpen(!svState.panelOpen);
-    }, { passive: false });
   }
 
   if (els.like) {
-    els.like.addEventListener('click', function (e) { stop(e); svToggleLike(); });
-    els.like.addEventListener('touchend', function (e) { stop(e); svToggleLike(); }, { passive: false });
+    els.like.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svToggleLike();
+    });
   }
   if (els.mute) {
-    els.mute.addEventListener('click', function (e) { stop(e); svToggleMute(); });
-    els.mute.addEventListener('touchend', function (e) { stop(e); svToggleMute(); }, { passive: false });
+    els.mute.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svToggleMute();
+    });
   }
 
   if (els.apply) {
-    els.apply.addEventListener('click', async function (e) {
-      stop(e);
-      const url = els.api ? els.api.value.trim() : '';
-      svWriteCustomApi(url);
-      svSetStatus('正在加载自定义源…');
-      svState.feed = await svLoadFeedFromApi(url);
-      svState.index = 0;
-      svPlayCurrent();
-      svSetPanelOpen(false);
+    els.apply.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svOnApplySource();
     });
   }
   if (els.reset) {
     els.reset.addEventListener('click', function (e) {
-      stop(e);
+      e.preventDefault();
+      stopBubble(e);
       if (els.api) els.api.value = '';
       svWriteCustomApi('');
       svState.feed = SV_BUILTIN_FEED.slice();
       svState.index = 0;
       svPlayCurrent();
       svSetStatus('已恢复内置片源');
+      svShowHint('已恢复内置');
       svSetPanelOpen(false);
+    });
+  }
+
+  /* 面板内：绝不让滑动逻辑插手 */
+  if (els.panel) {
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'click'].forEach(function (evName) {
+      els.panel.addEventListener(evName, function (e) {
+        stopBubble(e);
+      }, { passive: true });
     });
   }
 
   const stage = els.stage;
   if (stage) {
     stage.addEventListener('touchstart', function (e) {
+      if (svIsInteractiveTarget(e.target)) return;
       if (!e.touches || !e.touches.length) return;
-      /* 点在侧栏按钮上不记滑动 */
-      const t = e.target;
-      if (t && t.closest && (t.closest('#eight-tail-sv-rail') || t.closest('#eight-tail-sv-toolbar') || t.closest('#eight-tail-sv-panel'))) {
-        return;
-      }
       svState.moved = false;
       svState.startY = e.touches[0].clientY;
       svState.startX = e.touches[0].clientX;
     }, { passive: true });
 
     stage.addEventListener('touchmove', function (e) {
+      if (svIsInteractiveTarget(e.target)) return;
       if (!e.touches || !e.touches.length) return;
       const dy = e.touches[0].clientY - svState.startY;
       const dx = e.touches[0].clientX - svState.startX;
       if (Math.abs(dy) > 10 || Math.abs(dx) > 10) svState.moved = true;
-      /* 纵向滑动时阻止页面滚动 */
       if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 8) {
         try { e.preventDefault(); } catch (_) {}
       }
     }, { passive: false });
 
     stage.addEventListener('touchend', function (e) {
+      if (svIsInteractiveTarget(e.target)) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
       if (!t) return;
-      const target = e.target;
-      if (target && target.closest && (target.closest('#eight-tail-sv-rail') || target.closest('#eight-tail-sv-toolbar') || target.closest('#eight-tail-sv-panel'))) {
-        return;
-      }
       const dy = t.clientY - svState.startY;
       if (Math.abs(dy) >= SV_SWIPE_PX) {
         try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
-        if (dy < 0) svGo(1);   /* 上滑 → 下一条 */
-        else svGo(-1);         /* 下滑 → 上一条 */
+        if (dy < 0) svGo(1);
+        else svGo(-1);
         return;
       }
-      /* 单击中央：播放/暂停 */
       if (!svState.moved) {
         try { e.preventDefault(); e.stopPropagation(); } catch (_) {}
         svTogglePlay();
@@ -732,11 +859,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('click', function (e) {
-      const target = e.target;
-      if (target && target.closest && (target.closest('#eight-tail-sv-rail') || target.closest('#eight-tail-sv-toolbar') || target.closest('#eight-tail-sv-panel'))) {
-        return;
-      }
-      /* 移动端已由 touchend 处理；桌面单击 */
+      if (svIsInteractiveTarget(e.target)) return;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
       e.preventDefault();
       e.stopPropagation();
@@ -745,14 +868,22 @@ function svBindUi(root) {
 
     stage.addEventListener('wheel', function (e) {
       if (!svState.open) return;
+      if (svIsInteractiveTarget(e.target)) return;
       e.preventDefault();
       if (e.deltaY > 24) svGo(1);
       else if (e.deltaY < -24) svGo(-1);
     }, { passive: false });
   }
 
-  root.addEventListener('pointerdown', function (e) { e.stopPropagation(); }, true);
-  root.addEventListener('touchstart', function (e) { e.stopPropagation(); }, { capture: true, passive: true });
+  /* 仅冒泡阶段拦截，绝不在 capture 里 stopPropagation（否则 input/button 收不到事件） */
+  root.addEventListener('pointerdown', function (e) {
+    if (svIsInteractiveTarget(e.target)) return;
+    e.stopPropagation();
+  });
+  root.addEventListener('touchstart', function (e) {
+    if (svIsInteractiveTarget(e.target)) return;
+    e.stopPropagation();
+  }, { passive: true });
 }
 
 export async function openShortVideoPlayer() {

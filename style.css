@@ -181,7 +181,25 @@
 }
 
 #eight-tail-sv-close {
-  z-index: 100003 !important;
+  z-index: 100006 !important;
   pointer-events: auto !important;
   background: rgba(239, 68, 68, 0.88) !important;
+}
+
+#video-source-panel,
+#eight-tail-sv-panel {
+  position: relative !important;
+  z-index: 100005 !important;
+  pointer-events: auto !important;
+}
+
+#video-source-panel input,
+#video-source-panel button,
+#eight-tail-sv-api,
+#eight-tail-sv-apply,
+#eight-tail-sv-reset {
+  position: relative !important;
+  z-index: 100005 !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
 }
