@@ -197,9 +197,59 @@
 #video-source-panel button,
 #eight-tail-sv-api,
 #eight-tail-sv-apply,
-#eight-tail-sv-reset {
+#eight-tail-sv-reset,
+#eight-tail-sv-presets button,
+#eight-tail-sv-btn-bili,
+#eight-tail-sv-btn-yt,
+#eight-tail-sv-btn-ph {
   position: relative !important;
   z-index: 100005 !important;
   pointer-events: auto !important;
   touch-action: manipulation !important;
+}
+
+#eight-tail-sv-presets {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+
+#eight-tail-sv-btn-bili {
+  background: linear-gradient(135deg, #ff8fab, #ff5d8f) !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+}
+
+#eight-tail-sv-btn-yt {
+  background: linear-gradient(135deg, #ff6b6b, #c62828) !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+}
+
+#eight-tail-sv-btn-ph {
+  background: linear-gradient(135deg, #ff9900, #ff6600) !important;
+  color: #fff !important;
+  font-weight: 800 !important;
+}
+
+#eight-tail-sv-embed,
+#eight-tail-sv-bili {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  border: none !important;
+  display: none !important;
+}
+
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-embed,
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-bili,
+#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-embed,
+#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-bili {
+  display: block !important;
+}
+
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-video,
+#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-video {
+  display: none !important;
 }

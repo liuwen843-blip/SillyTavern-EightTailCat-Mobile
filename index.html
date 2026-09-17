@@ -3922,19 +3922,31 @@
       </div>
     </div>
 
-    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="短视频" aria-hidden="true">
+    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="刷一刷" aria-hidden="true">
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">刷一刷</h3>
-        <p class="app-hub-sub">酒馆内嵌短视频 · 不离开当前页面<br />等待 AI 吐字时也能安心刷，不会切屏断连</p>
-        <div id="app-hub-grid" aria-label="内嵌应用">
+        <p class="app-hub-sub">内嵌短视频不离页 · 抖音/小红书优先唤起本地 App<br />后台酒馆继续生成，不会被切屏打断</p>
+        <div id="app-hub-grid" aria-label="应用列表">
           <button type="button" class="app-hub-icon" data-app="short-video" data-action="short-video">
-            <span class="app-emoji" aria-hidden="true">🎵</span>
+            <span class="app-emoji" aria-hidden="true">🎬</span>
             <span class="app-name">短视频</span>
-            <span class="app-open-hint">内嵌播放</span>
+            <span class="app-open-hint">B站·YT·内嵌</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
+            data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
+            <span class="app-emoji" aria-hidden="true">🎵</span>
+            <span class="app-name">抖音</span>
+            <span class="app-open-hint">唤起 App</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-action="external-app"
+            data-scheme="xhsdiscover://home" data-url="https://www.xiaohongshu.com/" data-murl="https://www.xiaohongshu.com/explore">
+            <span class="app-emoji" aria-hidden="true">📕</span>
+            <span class="app-name">小红书</span>
+            <span class="app-open-hint">唤起 App</span>
           </button>
         </div>
-        <p class="app-hub-sub" style="margin-top:22px;margin-bottom:0;font-size:11px;opacity:.7;">上下滑动切换 · 单击暂停 · 默认静音<br />自定义视频源可在播放器底部填写</p>
+        <p class="app-hub-sub" style="margin-top:22px;margin-bottom:0;font-size:11px;opacity:.7;">短视频：⚙ 换源支持 B站 / YouTube / Pornhub<br />外链 App 未安装时自动打开网页版</p>
       </div>
     </div>
 
@@ -12961,30 +12973,118 @@
         if (memoPanel) memoPanel.classList.remove("open");
         const chatPanel = document.getElementById("chat-panel");
         if (chatPanel) chatPanel.classList.remove("open");
-        try { closeAppHubModal(); } catch (_) {}
-        /* 直接打开内嵌短视频，不等待外链 / iframe */
-        const ok = requestOpenShortVideo();
-        if (!ok) {
-          const modal = document.getElementById("app-hub-modal");
-          if (modal) {
-            modal.classList.add("open");
-            modal.setAttribute("aria-hidden", "false");
-          }
+        const modal = document.getElementById("app-hub-modal");
+        if (modal) {
+          modal.classList.add("open");
+          modal.setAttribute("aria-hidden", "false");
         }
         try { syncCapsuleOverlay(); } catch (_) {}
         try { reportHitRect(); } catch (_) {}
         markActivity();
       }
 
-      /** 已废除外开：视频走内嵌播放器 */
-      function openAppInHub(name, url, action) {
-        if (action === "short-video" || !url) {
+      /** 优先 URL Scheme 唤起本地 App，失败则网页版新窗；不打断酒馆后台 */
+      function launchExternalApp(opts) {
+        opts = opts || {};
+        const scheme = String(opts.scheme || "").trim();
+        const web = String(opts.murl || opts.url || "").trim();
+        const name = String(opts.name || "应用");
+        let opened = false;
+
+        function openWebFallback() {
+          if (!web) return;
+          try {
+            window.open(web, "_blank", "noopener,noreferrer");
+            opened = true;
+          } catch (_) {
+            try {
+              const a = document.createElement("a");
+              a.href = web;
+              a.target = "_blank";
+              a.rel = "noopener noreferrer";
+              a.style.display = "none";
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+              opened = true;
+            } catch (__) {}
+          }
+        }
+
+        if (scheme) {
+          const start = Date.now();
+          let fallbackTimer = null;
+          const clearWatch = function () {
+            try { window.removeEventListener("pagehide", onHide); } catch (_) {}
+            try { document.removeEventListener("visibilitychange", onVis); } catch (_) {}
+            if (fallbackTimer) {
+              clearTimeout(fallbackTimer);
+              fallbackTimer = null;
+            }
+          };
+          const onHide = function () {
+            opened = true;
+            clearWatch();
+          };
+          const onVis = function () {
+            if (document.hidden) {
+              opened = true;
+              clearWatch();
+            }
+          };
+          try {
+            window.addEventListener("pagehide", onHide);
+            document.addEventListener("visibilitychange", onVis);
+          } catch (_) {}
+
+          try {
+            const iframe = document.createElement("iframe");
+            iframe.style.cssText = "display:none;width:0;height:0;border:0;position:absolute;";
+            iframe.src = scheme;
+            document.body.appendChild(iframe);
+            setTimeout(function () {
+              try { iframe.remove(); } catch (_) {}
+            }, 1500);
+          } catch (_) {
+            try { window.location.href = scheme; } catch (__) {}
+          }
+
+          fallbackTimer = setTimeout(function () {
+            clearWatch();
+            if (!opened && Date.now() - start < 2800) {
+              openWebFallback();
+              try { showToast(name + " 未安装，已打开网页版", 1600); } catch (_) {}
+            }
+          }, 1200);
+        } else {
+          openWebFallback();
+        }
+        return true;
+      }
+
+      function openAppInHub(name, url, action, btn) {
+        const actionType = action || (btn && btn.getAttribute("data-action")) || "";
+        if (actionType === "short-video" || name === "short-video") {
           requestOpenShortVideo();
           try { closeAppHubModal(); } catch (_) {}
           try { showToast("已打开内嵌短视频", 1200); } catch (_) {}
           return;
         }
-        /* 其它入口也强制内嵌短视频，禁止 window.open 切屏 */
+        if (actionType === "external-app" || name === "douyin" || name === "xiaohongshu") {
+          const scheme = (btn && btn.getAttribute("data-scheme")) || "";
+          const murl = (btn && btn.getAttribute("data-murl")) || url || "";
+          const label = name === "douyin" ? "抖音" : (name === "xiaohongshu" ? "小红书" : name);
+          launchExternalApp({
+            name: label,
+            scheme: scheme,
+            url: url,
+            murl: murl,
+          });
+          try { closeAppHubModal(); } catch (_) {}
+          try { showToast("正在打开" + label + "…", 1000); } catch (_) {}
+          return;
+        }
+        /* 未知入口：仍走内嵌短视频，避免误切屏 */
         requestOpenShortVideo();
         try { closeAppHubModal(); } catch (_) {}
       }
@@ -13016,7 +13116,8 @@
             openAppInHub(
               btn.getAttribute("data-app"),
               btn.getAttribute("data-url"),
-              btn.getAttribute("data-action") || "short-video"
+              btn.getAttribute("data-action") || "short-video",
+              btn
             );
           });
           grid.addEventListener("touchend", function (e) {
@@ -13027,7 +13128,8 @@
             openAppInHub(
               btn.getAttribute("data-app"),
               btn.getAttribute("data-url"),
-              btn.getAttribute("data-action") || "short-video"
+              btn.getAttribute("data-action") || "short-video",
+              btn
             );
           }, { passive: false });
         }

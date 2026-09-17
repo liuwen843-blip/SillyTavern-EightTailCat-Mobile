@@ -1,20 +1,25 @@
 /**
  * 酒馆宿主层 · 全屏沉浸短视频（抖音风上下滑）
- * - 挂 document.body，z-index 压过桌宠
- * - 原生 <video>，无外站 iframe
- * - 换源栏默认折叠，不挡画面
+ * - 原生 <video> + 多平台官方 iframe（B站 / YouTube / Pornhub）
+ * - 换源栏默认折叠；平台快捷预设 + 关闭彻底静音
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v2';
+const SV_STYLE_ID = 'eight-tail-sv-style-v5';
 const SV_API_LS_KEY = 'eight_tail_short_video_custom_api';
 const SV_MUTED_LS_KEY = 'eight_tail_short_video_muted';
+const SV_MODE_LS_KEY = 'eight_tail_short_video_mode'; /* native | bilibili | youtube | pornhub */
+const SV_EMBED_LS_KEY = 'eight_tail_short_video_embed_id';
+const SV_BV_LS_KEY_LEGACY = 'eight_tail_short_video_bvid';
 const SV_SWIPE_PX = 40;
 
-/**
- * 国内 CDN / 开放公共测试 MP4（直链、免嵌站）
- * 优先七牛/DCloud 等国内节点，开箱即可出画
- */
+/** 小猪佩奇合集（B站） */
+const SV_PEPPA_BVID = 'BV1Wx411n7Mh';
+const SV_PEPPA_TITLE = '小猪佩奇合集';
+/** YouTube 开箱测试片（Big Buck Bunny 预告） */
+const SV_YT_DEMO_ID = 'aqz-KE-bpKQ';
+const SV_YT_DEMO_TITLE = 'YouTube 测试片';
+
 const SV_BUILTIN_FEED = [
   {
     id: 'cn1',
@@ -48,6 +53,8 @@ const SV_BUILTIN_FEED = [
   },
 ];
 
+const SV_EMBED_MODES = { bilibili: 1, youtube: 1, pornhub: 1 };
+
 let svState = {
   index: 0,
   feed: SV_BUILTIN_FEED.slice(),
@@ -59,7 +66,14 @@ let svState = {
   open: false,
   panelOpen: false,
   preloadVideo: null,
+  mode: 'native', /* native | bilibili | youtube | pornhub */
+  embedId: '',
+  lastEmbed: { mode: '', id: '' },
 };
+
+function svIsEmbedMode(mode) {
+  return !!(mode && SV_EMBED_MODES[mode]);
+}
 
 function svReadMuted() {
   try {
@@ -67,7 +81,7 @@ function svReadMuted() {
     if (v === '0') return false;
     if (v === '1') return true;
   } catch (_) {}
-  return true; /* 默认静音，保证自动播放 */
+  return true;
 }
 
 function svWriteMuted(muted) {
@@ -80,6 +94,136 @@ function svReadCustomApi() {
 
 function svWriteCustomApi(url) {
   try { localStorage.setItem(SV_API_LS_KEY, String(url || '').trim()); } catch (_) {}
+}
+
+function svReadMode() {
+  try {
+    const m = localStorage.getItem(SV_MODE_LS_KEY);
+    if (m === 'native' || svIsEmbedMode(m)) return m;
+  } catch (_) {}
+  return 'native';
+}
+
+function svWriteMode(mode) {
+  const m = svIsEmbedMode(mode) ? mode : 'native';
+  try { localStorage.setItem(SV_MODE_LS_KEY, m); } catch (_) {}
+}
+
+function svReadEmbedId() {
+  try {
+    const cur = String(localStorage.getItem(SV_EMBED_LS_KEY) || '').trim();
+    if (cur) return cur;
+    return String(localStorage.getItem(SV_BV_LS_KEY_LEGACY) || '').trim();
+  } catch (_) { return ''; }
+}
+
+function svWriteEmbedId(id) {
+  try { localStorage.setItem(SV_EMBED_LS_KEY, String(id || '').trim()); } catch (_) {}
+}
+
+/* —— 多平台解析 —— */
+
+function svExtractBvId(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const m = s.match(/(BV[a-zA-Z0-9]{10})/i);
+  return m ? m[1] : null;
+}
+
+function svExtractYoutubeId(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  let m = s.match(/youtu\.be\/([a-zA-Z0-9_-]{6,})/i);
+  if (m) return m[1];
+  m = s.match(/[?&]v=([a-zA-Z0-9_-]{6,})/i);
+  if (m && /youtube\.com/i.test(s)) return m[1];
+  m = s.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/i);
+  if (m) return m[1];
+  m = s.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]{6,})/i);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{11}$/.test(s) && !/^BV/i.test(s)) return s;
+  return null;
+}
+
+function svExtractPornhubKey(text) {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  let m = s.match(/[?&]viewkey=([^&#]+)/i);
+  if (m) return decodeURIComponent(m[1]);
+  m = s.match(/pornhub\.com\/(?:embed|view_video\.php)\/?\??(?:.*viewkey=)?([a-zA-Z0-9]+)/i);
+  if (m && m[1] && m[1].toLowerCase() !== 'embed') return m[1];
+  if (/^[a-zA-Z0-9]{8,20}$/.test(s) && !/^BV/i.test(s) && !/^[a-zA-Z0-9_-]{11}$/.test(s)) {
+    return s;
+  }
+  return null;
+}
+
+function svLooksLikeBilibili(text) {
+  const s = String(text || '');
+  return /bilibili\.com/i.test(s) || /b23\.tv/i.test(s) || /(BV[a-zA-Z0-9]{10})/i.test(s);
+}
+
+function svLooksLikeYoutube(text) {
+  const s = String(text || '');
+  return /youtu\.be\//i.test(s) || /youtube\.com/i.test(s) || /youtube-nocookie\.com/i.test(s);
+}
+
+function svLooksLikePornhub(text) {
+  const s = String(text || '');
+  return /pornhub\.com/i.test(s) || /[?&]viewkey=/i.test(s);
+}
+
+function svParseEmbedInput(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+
+  if (svLooksLikeBilibili(text) || /(BV[a-zA-Z0-9]{10})/i.test(text)) {
+    const id = svExtractBvId(text);
+    if (id) return { platform: 'bilibili', id: id };
+  }
+  if (svLooksLikeYoutube(text)) {
+    const id = svExtractYoutubeId(text);
+    if (id) return { platform: 'youtube', id: id };
+  }
+  if (svLooksLikePornhub(text)) {
+    const id = svExtractPornhubKey(text);
+    if (id) return { platform: 'pornhub', id: id };
+  }
+  /* 裸 BV */
+  const bv = svExtractBvId(text);
+  if (bv && text.length <= 20) return { platform: 'bilibili', id: bv };
+  /* 裸 YouTube 11 位 id */
+  if (/^[a-zA-Z0-9_-]{11}$/.test(text) && !/^BV/i.test(text)) {
+    return { platform: 'youtube', id: text };
+  }
+  /* 裸 Pornhub viewkey（纯字母数字，非 BV） */
+  if (/^[a-zA-Z0-9]{8,20}$/.test(text) && !/^BV/i.test(text)) {
+    return { platform: 'pornhub', id: text };
+  }
+
+  return null;
+}
+
+function svEmbedUrl(platform, id) {
+  const safe = encodeURIComponent(String(id || '').trim());
+  if (platform === 'bilibili') {
+    return 'https://player.bilibili.com/player.html?bvid=' + safe +
+      '&page=1&high_quality=1&danmaku=0&autoplay=1';
+  }
+  if (platform === 'youtube') {
+    return 'https://www.youtube-nocookie.com/embed/' + safe + '?autoplay=1&rel=0';
+  }
+  if (platform === 'pornhub') {
+    return 'https://www.pornhub.com/embed/' + safe;
+  }
+  return '';
+}
+
+function svPlatformLabel(platform) {
+  if (platform === 'bilibili') return 'B站';
+  if (platform === 'youtube') return 'YouTube';
+  if (platform === 'pornhub') return 'Pornhub';
+  return '内嵌';
 }
 
 function svNormalizeItem(raw, i) {
@@ -141,153 +285,107 @@ function svEnsureStyle() {
     style.id = SV_STYLE_ID;
     document.head.appendChild(style);
   }
-  /* 清掉旧版样式节点，避免冲突 */
   try {
+    const old4 = document.getElementById('eight-tail-sv-style-v4');
+    if (old4) old4.remove();
     const old = document.getElementById('eight-tail-sv-style');
     if (old) old.remove();
   } catch (_) {}
 
   style.textContent = `
 #eight-tail-short-video-root {
-  position: fixed !important;
-  inset: 0 !important;
-  left: 0 !important;
-  top: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100vw !important;
-  height: 100dvh !important;
-  max-width: none !important;
-  max-height: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  background: #000 !important;
-  z-index: 100002 !important;
-  display: none !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-  pointer-events: auto !important;
-  touch-action: none !important;
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  color: #fff;
-  user-select: none;
-  -webkit-user-select: none;
-  box-sizing: border-box !important;
-  transform: none !important;
-  border: 0 !important;
-  border-radius: 0 !important;
+  position: fixed !important; inset: 0 !important; left: 0 !important; top: 0 !important;
+  right: 0 !important; bottom: 0 !important; width: 100vw !important; height: 100dvh !important;
+  max-width: none !important; max-height: none !important; margin: 0 !important; padding: 0 !important;
+  background: #000 !important; z-index: 100002 !important; display: none !important;
+  flex-direction: column !important; overflow: hidden !important; pointer-events: auto !important;
+  touch-action: none !important; font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #fff; user-select: none; -webkit-user-select: none; box-sizing: border-box !important;
+  transform: none !important; border: 0 !important; border-radius: 0 !important;
 }
-#eight-tail-short-video-root.is-open {
-  display: flex !important;
-}
+#eight-tail-short-video-root.is-open { display: flex !important; }
 #eight-tail-short-video-root,
-#eight-tail-short-video-root * {
-  pointer-events: auto !important;
-  box-sizing: border-box;
-}
+#eight-tail-short-video-root * { pointer-events: auto !important; box-sizing: border-box; }
 #eight-tail-sv-toolbar {
-  position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  right: 0 !important;
-  z-index: 20 !important;
-  display: flex !important;
-  align-items: flex-start !important;
-  justify-content: flex-end !important;
-  gap: 8px !important;
+  position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important;
+  z-index: 20 !important; display: flex !important; align-items: flex-start !important;
+  justify-content: flex-end !important; gap: 8px !important;
   padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px 12px !important;
   background: linear-gradient(180deg, rgba(0,0,0,.55), transparent) !important;
   pointer-events: auto !important;
 }
 #eight-tail-sv-gear,
 #eight-tail-sv-close {
-  width: 42px !important;
-  height: 42px !important;
-  border: 0 !important;
-  border-radius: 50% !important;
-  background: rgba(255,255,255,.22) !important;
-  color: #fff !important;
-  font-size: 20px !important;
-  line-height: 1 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 4px 14px rgba(0,0,0,.35);
-  flex-shrink: 0 !important;
+  width: 42px !important; height: 42px !important; border: 0 !important; border-radius: 50% !important;
+  background: rgba(255,255,255,.22) !important; color: #fff !important; font-size: 20px !important;
+  line-height: 1 !important; display: flex !important; align-items: center !important;
+  justify-content: center !important; cursor: pointer !important; pointer-events: auto !important;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 14px rgba(0,0,0,.35); flex-shrink: 0 !important;
 }
 #eight-tail-sv-close {
-  background: rgba(239, 68, 68, .88) !important;
-  font-size: 26px !important;
-  font-weight: 700 !important;
+  background: rgba(239, 68, 68, .88) !important; font-size: 26px !important; font-weight: 700 !important;
 }
 #eight-tail-sv-stage {
-  position: relative !important;
-  flex: 1 1 auto !important;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-  background: #000 !important;
-  pointer-events: auto !important;
-  touch-action: none !important;
+  position: relative !important; flex: 1 1 auto !important; width: 100% !important; height: 100% !important;
+  min-height: 0 !important; overflow: hidden !important; background: #000 !important;
+  pointer-events: auto !important; touch-action: none !important;
 }
 #eight-tail-sv-video {
-  position: absolute !important;
-  inset: 0 !important;
-  flex: 1 !important;
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain !important;
-  background: #000 !important;
-  pointer-events: none !important; /* 手势由 stage 接管 */
+  position: absolute !important; inset: 0 !important; flex: 1 !important; width: 100% !important;
+  height: 100% !important; object-fit: contain !important; background: #000 !important;
+  pointer-events: none !important; display: block !important;
+}
+#eight-tail-sv-embed,
+#eight-tail-sv-bili {
+  position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important;
+  border: none !important; background: #000 !important; display: none !important;
+  pointer-events: auto !important; z-index: 3 !important;
+}
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-video { display: none !important; }
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-embed,
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-bili { display: block !important; }
+#eight-tail-short-video-root.mode-embed #eight-tail-sv-mute { opacity: 0.45; }
+#eight-tail-sv-presets {
+  display: flex !important; flex-wrap: wrap !important; gap: 8px !important;
+  position: relative !important; z-index: 100005 !important;
+}
+#eight-tail-sv-presets button {
+  flex: 1 1 auto !important; min-width: 72px !important; border: 0 !important; border-radius: 10px !important;
+  padding: 9px 10px !important; font-size: 13px !important; font-weight: 800 !important;
+  cursor: pointer !important; pointer-events: auto !important; touch-action: manipulation !important;
+  color: #fff !important; position: relative !important; z-index: 100005 !important;
+}
+#eight-tail-sv-btn-bili {
+  background: linear-gradient(135deg, #ff8fab, #ff5d8f) !important;
+  box-shadow: 0 4px 12px rgba(255, 93, 143, 0.3) !important;
+}
+#eight-tail-sv-btn-yt {
+  background: linear-gradient(135deg, #ff6b6b, #c62828) !important;
+  box-shadow: 0 4px 12px rgba(198, 40, 40, 0.3) !important;
+}
+#eight-tail-sv-btn-ph {
+  background: linear-gradient(135deg, #ff9900, #ff6600) !important;
+  box-shadow: 0 4px 12px rgba(255, 102, 0, 0.28) !important;
 }
 #eight-tail-sv-hint {
-  position: absolute;
-  left: 50%;
-  top: 45%;
-  transform: translate(-50%, -50%);
-  z-index: 6;
-  font-size: 14px;
-  opacity: 0;
-  pointer-events: none !important;
-  transition: opacity .18s;
-  background: rgba(0,0,0,.5);
-  padding: 8px 16px;
-  border-radius: 999px;
+  position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%);
+  z-index: 6; font-size: 14px; opacity: 0; pointer-events: none !important;
+  transition: opacity .18s; background: rgba(0,0,0,.5); padding: 8px 16px; border-radius: 999px;
 }
 #eight-tail-sv-hint.show { opacity: 1; }
 #eight-tail-sv-rail {
-  position: absolute !important;
-  right: 10px !important;
+  position: absolute !important; right: 10px !important;
   bottom: max(100px, calc(18% + env(safe-area-inset-bottom))) !important;
-  z-index: 8 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 16px !important;
-  pointer-events: auto !important;
+  z-index: 8 !important; display: flex !important; flex-direction: column !important;
+  align-items: center !important; gap: 16px !important; pointer-events: auto !important;
 }
 .etc-sv-rail-btn {
-  width: 48px !important;
-  min-height: 48px !important;
-  border: 0 !important;
-  border-radius: 50% !important;
-  background: rgba(0,0,0,.4) !important;
-  color: #fff !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 2px !important;
-  font-size: 11px !important;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  pointer-events: auto !important;
-  cursor: pointer !important;
+  width: 48px !important; min-height: 48px !important; border: 0 !important; border-radius: 50% !important;
+  background: rgba(0,0,0,.4) !important; color: #fff !important; display: flex !important;
+  flex-direction: column !important; align-items: center !important; justify-content: center !important;
+  gap: 2px !important; font-size: 11px !important; backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px); pointer-events: auto !important; cursor: pointer !important;
   padding: 6px 0 !important;
 }
 .etc-sv-rail-btn .ico { font-size: 22px; line-height: 1; }
@@ -299,66 +397,39 @@ function svEnsureStyle() {
   font-size: 22px; pointer-events: none !important;
 }
 #eight-tail-sv-meta {
-  position: absolute;
-  left: 14px; right: 72px;
+  position: absolute; left: 14px; right: 72px;
   bottom: max(72px, calc(12% + env(safe-area-inset-bottom)));
-  z-index: 7;
-  pointer-events: none !important;
-  text-shadow: 0 1px 4px rgba(0,0,0,.7);
+  z-index: 7; pointer-events: none !important; text-shadow: 0 1px 4px rgba(0,0,0,.7);
 }
 #eight-tail-sv-author { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
 #eight-tail-sv-title { font-size: 13px; opacity: .92; line-height: 1.4; max-height: 3.2em; overflow: hidden; }
 #eight-tail-sv-panel,
 #video-source-panel {
-  position: relative !important;
-  z-index: 100005 !important;
-  left: 0 !important; right: 0 !important; bottom: 0 !important;
-  display: none !important;
-  flex-direction: column !important;
-  gap: 8px !important;
-  margin-top: auto !important;
-  flex: 0 0 auto !important;
+  position: relative !important; z-index: 100005 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
+  display: none !important; flex-direction: column !important; gap: 8px !important;
+  margin-top: auto !important; flex: 0 0 auto !important;
   padding: 12px 14px calc(12px + env(safe-area-inset-bottom)) !important;
-  background: rgba(10,10,14,.96) !important;
-  border-top: 1px solid rgba(255,255,255,.1) !important;
+  background: rgba(10,10,14,.96) !important; border-top: 1px solid rgba(255,255,255,.1) !important;
   pointer-events: auto !important;
 }
 #eight-tail-short-video-root.panel-open #eight-tail-sv-panel,
-#eight-tail-short-video-root.panel-open #video-source-panel {
-  display: flex !important;
-}
+#eight-tail-short-video-root.panel-open #video-source-panel { display: flex !important; }
 #eight-tail-sv-panel label,
 #video-source-panel label { font-size: 11px; opacity: .75; pointer-events: none !important; }
 #eight-tail-sv-api,
 #video-source-panel input {
-  position: relative !important;
-  z-index: 100005 !important;
-  width: 100% !important;
-  border-radius: 10px !important;
-  border: 1px solid rgba(255,255,255,.2) !important;
-  background: rgba(255,255,255,.12) !important;
-  color: #fff !important;
-  padding: 10px 12px !important;
-  font-size: 13px !important;
-  outline: none !important;
-  pointer-events: auto !important;
-  -webkit-user-select: text !important;
-  user-select: text !important;
-  touch-action: manipulation !important;
+  position: relative !important; z-index: 100005 !important; width: 100% !important;
+  border-radius: 10px !important; border: 1px solid rgba(255,255,255,.2) !important;
+  background: rgba(255,255,255,.12) !important; color: #fff !important; padding: 10px 12px !important;
+  font-size: 13px !important; outline: none !important; pointer-events: auto !important;
+  -webkit-user-select: text !important; user-select: text !important; touch-action: manipulation !important;
 }
 #eight-tail-sv-actions { display: flex; gap: 8px; position: relative; z-index: 100005 !important; }
 #eight-tail-sv-actions button,
-#video-source-panel button {
-  position: relative !important;
-  z-index: 100005 !important;
-  flex: 1 !important;
-  border: 0 !important;
-  border-radius: 10px !important;
-  padding: 10px !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
+#video-source-panel button:not(#eight-tail-sv-presets button) {
+  position: relative !important; z-index: 100005 !important; flex: 1 !important; border: 0 !important;
+  border-radius: 10px !important; padding: 10px !important; font-size: 13px !important;
+  font-weight: 700 !important; cursor: pointer !important; pointer-events: auto !important;
   touch-action: manipulation !important;
 }
 #eight-tail-sv-apply { background: #5b8def !important; color: #fff !important; }
@@ -369,33 +440,6 @@ function svEnsureStyle() {
 
 function svForceRootCss(root) {
   if (!root) return;
-  const css = {
-    position: 'fixed',
-    inset: '0',
-    left: '0',
-    top: '0',
-    right: '0',
-    bottom: '0',
-    width: '100vw',
-    height: '100dvh',
-    background: '#000',
-    zIndex: '100002',
-    display: 'flex',
-    flexDirection: 'column',
-    overflow: 'hidden',
-    pointerEvents: 'auto',
-    margin: '0',
-    padding: '0',
-    transform: 'none',
-    border: '0',
-    borderRadius: '0',
-    maxWidth: 'none',
-    maxHeight: 'none',
-  };
-  Object.keys(css).forEach(function (k) {
-    try { root.style.setProperty(k.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); }), css[k], 'important'); } catch (_) {}
-  });
-  /* 上面 camel→kebab 对 inset 等 OK；显式再写一遍关键项 */
   root.style.setProperty('position', 'fixed', 'important');
   root.style.setProperty('inset', '0', 'important');
   root.style.setProperty('width', '100vw', 'important');
@@ -415,7 +459,7 @@ function svGetRoot() {
 function svBuildDom() {
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '3') {
+  if (root && root.dataset.svVersion === '5') {
     svForceRootCss(root);
     return root;
   }
@@ -425,7 +469,7 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '3';
+  root.dataset.svVersion = '5';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频');
   root.setAttribute('aria-hidden', 'true');
@@ -436,6 +480,7 @@ function svBuildDom() {
     '</div>',
     '<div id="eight-tail-sv-stage">',
     '  <video id="eight-tail-sv-video" muted autoplay loop playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page" preload="auto"></video>',
+    '  <iframe id="eight-tail-sv-embed" title="内嵌播放器" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen scrolling="no" referrerpolicy="no-referrer-when-downgrade"></iframe>',
     '  <div id="eight-tail-sv-hint">暂停</div>',
     '  <div id="eight-tail-sv-rail">',
     '    <div id="eight-tail-sv-avatar" aria-hidden="true">🐱</div>',
@@ -448,13 +493,18 @@ function svBuildDom() {
     '  </div>',
     '</div>',
     '<div id="video-source-panel" class="eight-tail-sv-panel">',
-    '  <label for="eight-tail-sv-api">自定义视频源 / API（JSON 数组或 mp4 直链）</label>',
-    '  <input id="eight-tail-sv-api" type="url" inputmode="url" placeholder="https://.../a.mp4 或 API 地址" autocomplete="off" />',
+    '  <div id="eight-tail-sv-presets" role="group" aria-label="平台快捷">',
+    '    <button type="button" id="eight-tail-sv-btn-bili" title="B站 · 小猪佩奇">🐷 B站</button>',
+    '    <button type="button" id="eight-tail-sv-btn-yt" title="YouTube 测试">▶ YouTube</button>',
+    '    <button type="button" id="eight-tail-sv-btn-ph" title="Pornhub 链接/viewkey">🔥 Pornhub</button>',
+    '  </div>',
+    '  <label for="eight-tail-sv-api">自定义源：mp4 / B站·YT·PH 链接 / BV / viewkey</label>',
+    '  <input id="eight-tail-sv-api" type="text" inputmode="url" placeholder="mp4 直链 · BV号 · youtube.com/... · viewkey=..." autocomplete="off" />',
     '  <div id="eight-tail-sv-actions">',
     '    <button type="button" id="eight-tail-sv-apply">应用源</button>',
     '    <button type="button" id="eight-tail-sv-reset">恢复内置</button>',
     '  </div>',
-    '  <div id="eight-tail-sv-status">上下滑动切换 · 点屏幕播放/暂停</div>',
+    '  <div id="eight-tail-sv-status">支持 B站 / YouTube / Pornhub 官方内嵌 · 直链走原生播放</div>',
     '</div>',
   ].join('');
 
@@ -470,6 +520,7 @@ function svEls(root) {
   return {
     root: root,
     video: root.querySelector('#eight-tail-sv-video'),
+    embed: root.querySelector('#eight-tail-sv-embed') || root.querySelector('#eight-tail-sv-bili'),
     hint: root.querySelector('#eight-tail-sv-hint'),
     like: root.querySelector('#eight-tail-sv-like'),
     mute: root.querySelector('#eight-tail-sv-mute'),
@@ -480,6 +531,9 @@ function svEls(root) {
     api: root.querySelector('#eight-tail-sv-api'),
     apply: root.querySelector('#eight-tail-sv-apply'),
     reset: root.querySelector('#eight-tail-sv-reset'),
+    btnBili: root.querySelector('#eight-tail-sv-btn-bili'),
+    btnYt: root.querySelector('#eight-tail-sv-btn-yt'),
+    btnPh: root.querySelector('#eight-tail-sv-btn-ph'),
     status: root.querySelector('#eight-tail-sv-status'),
     stage: root.querySelector('#eight-tail-sv-stage'),
     panel: root.querySelector('#video-source-panel') || root.querySelector('#eight-tail-sv-panel'),
@@ -511,10 +565,22 @@ function svCurrent() {
 function svUpdateChrome() {
   const item = svCurrent();
   const els = svEls();
-  if (!item || !els.video) return;
-  if (els.author) els.author.textContent = item.author || '@sample';
-  if (els.title) els.title.textContent = item.title || '';
-  const liked = !!svState.liked[item.id || item.url];
+  if (!els.root) return;
+  if (svIsEmbedMode(svState.mode)) {
+    const label = svPlatformLabel(svState.mode);
+    if (els.author) els.author.textContent = '@' + label;
+    let title = label + ' 视频';
+    if (svState.mode === 'bilibili' && svState.embedId === SV_PEPPA_BVID) title = SV_PEPPA_TITLE;
+    if (svState.mode === 'youtube' && svState.embedId === SV_YT_DEMO_ID) title = SV_YT_DEMO_TITLE;
+    if (els.title) els.title.textContent = title + (svState.embedId ? ' · ' + svState.embedId : '');
+  } else if (item) {
+    if (els.author) els.author.textContent = item.author || '@sample';
+    if (els.title) els.title.textContent = item.title || '';
+  }
+  const likedKey = svIsEmbedMode(svState.mode)
+    ? (svState.mode + ':' + svState.embedId)
+    : (item && (item.id || item.url));
+  const liked = likedKey ? !!svState.liked[likedKey] : false;
   if (els.like) {
     els.like.classList.toggle('is-on', liked);
     const ico = els.like.querySelector('.ico');
@@ -526,8 +592,90 @@ function svUpdateChrome() {
     const ico = els.mute.querySelector('.ico');
     const n = els.mute.querySelector('.n');
     if (ico) ico.textContent = svState.muted ? '🔇' : '🔊';
-    if (n) n.textContent = svState.muted ? '静音' : '声音';
+    if (n) {
+      n.textContent = svIsEmbedMode(svState.mode)
+        ? (svPlatformLabel(svState.mode) + '内音量')
+        : (svState.muted ? '静音' : '声音');
+    }
   }
+}
+
+function svClearEmbedFrame() {
+  const els = svEls();
+  const root = els.root;
+  if (els.embed) {
+    try { els.embed.src = 'about:blank'; } catch (_) {}
+    try { els.embed.removeAttribute('src'); } catch (_) {}
+    els.embed.style.display = 'none';
+  }
+  if (root) {
+    root.classList.remove('mode-embed', 'mode-bilibili', 'mode-youtube', 'mode-pornhub');
+  }
+}
+
+function svSwitchToNativeMode() {
+  svState.mode = 'native';
+  svWriteMode('native');
+  svClearEmbedFrame();
+  const els = svEls();
+  if (els.video) els.video.style.display = 'block';
+  svUpdateChrome();
+}
+
+function svSwitchToEmbedMode(platform, id, opts) {
+  opts = opts || {};
+  const pid = String(id || '').trim();
+  if (!svIsEmbedMode(platform) || !pid) {
+    svShowHint('未识别到有效 ID');
+    return false;
+  }
+  const els = svEls();
+  const root = els.root;
+  if (!els.embed || !root) return false;
+
+  /* 暂停原生 video，清空旧 iframe，防双声道 / 旧源漏声 */
+  if (els.video) {
+    try { els.video.pause(); } catch (_) {}
+    try { els.video.removeAttribute('src'); els.video.load(); } catch (_) {}
+    els.video.style.display = 'none';
+  }
+  try { els.embed.src = 'about:blank'; } catch (_) {}
+
+  const src = svEmbedUrl(platform, pid);
+  if (!src) {
+    svShowHint('无法生成播放地址');
+    return false;
+  }
+
+  svState.mode = platform;
+  svState.embedId = pid;
+  svState.lastEmbed = { mode: platform, id: pid };
+  svWriteMode(platform);
+  svWriteEmbedId(pid);
+  if (opts.saveInput !== false) {
+    const saveVal = opts.inputValue != null ? opts.inputValue : pid;
+    svWriteCustomApi(saveVal);
+    if (els.api) els.api.value = saveVal;
+  }
+
+  root.classList.remove('mode-bilibili', 'mode-youtube', 'mode-pornhub');
+  root.classList.add('mode-embed', 'mode-' + platform);
+  els.embed.style.display = 'block';
+  els.embed.style.width = '100%';
+  els.embed.style.height = '100%';
+  els.embed.style.border = 'none';
+  els.embed.title = svPlatformLabel(platform) + ' 播放器';
+  els.embed.src = src;
+
+  svUpdateChrome();
+  const hintName = (platform === 'bilibili' && pid === SV_PEPPA_BVID)
+    ? '🐷 小猪佩奇'
+    : (svPlatformLabel(platform) + ' 播放');
+  svShowHint(hintName);
+  svSetStatus(svPlatformLabel(platform) + ' 内嵌 · ' + pid +
+    (platform === 'bilibili' && pid === SV_PEPPA_BVID ? ' · 小猪佩奇' : ''));
+  if (opts.closePanel !== false) svSetPanelOpen(false);
+  return true;
 }
 
 function svPreloadNext() {
@@ -567,7 +715,6 @@ function svPrepareVideoEl(v) {
 
 function svTryPlay(v) {
   if (!v) return;
-  /* 自动播放前强制静音，否则移动端一律拦截 */
   v.muted = true;
   svState.muted = true;
   svWriteMuted(true);
@@ -582,6 +729,13 @@ function svTryPlay(v) {
 }
 
 function svPlayCurrent() {
+  if (svIsEmbedMode(svState.mode)) {
+    if (svState.embedId) {
+      svSwitchToEmbedMode(svState.mode, svState.embedId, { saveInput: false, closePanel: false });
+    }
+    return;
+  }
+  svSwitchToNativeMode();
   const item = svCurrent();
   const els = svEls();
   if (!item || !els.video) return;
@@ -593,12 +747,12 @@ function svPlayCurrent() {
   v.src = item.url;
   try { v.load(); } catch (_) {}
   svTryPlay(v);
-  /* 若用户之前选择开声，等首次 play 成功后再尝试取消静音需用户点击 —— 保持静音直到点喇叭 */
   svPreloadNext();
   svSetStatus((svState.index + 1) + ' / ' + svState.feed.length + ' · 上滑下一条 · 点喇叭开声');
 }
 
 function svApplyDirectUrl(newUrl) {
+  svSwitchToNativeMode();
   const els = svEls();
   const video = els.video;
   if (!video) return;
@@ -616,7 +770,6 @@ function svApplyDirectUrl(newUrl) {
   video.pause();
   video.src = newUrl;
   video.load();
-  /* 自动播放前强制静音，否则移动端一律拦截 */
   video.muted = true;
   const playPromise = video.play();
   if (playPromise !== undefined && typeof playPromise.catch === 'function') {
@@ -635,6 +788,10 @@ function svApplyDirectUrl(newUrl) {
 }
 
 function svGo(delta) {
+  if (svIsEmbedMode(svState.mode)) {
+    svShowHint(svPlatformLabel(svState.mode) + ' 模式请用播放器内切换');
+    return;
+  }
   const feed = svState.feed || [];
   if (!feed.length) return;
   svState.index = (svState.index + delta + feed.length) % feed.length;
@@ -647,8 +804,11 @@ function svGo(delta) {
 }
 
 function svToggleMute() {
+  if (svIsEmbedMode(svState.mode)) {
+    svShowHint('请用 ' + svPlatformLabel(svState.mode) + ' 播放器内音量');
+    return;
+  }
   const v = svEls().video;
-  /* 用户手势下才允许开声 */
   svState.muted = !svState.muted;
   svWriteMuted(svState.muted);
   if (v) {
@@ -663,10 +823,13 @@ function svToggleMute() {
 }
 
 function svTogglePlay() {
+  if (svIsEmbedMode(svState.mode)) {
+    svShowHint('请点 ' + svPlatformLabel(svState.mode) + ' 播放器控制');
+    return;
+  }
   const v = svEls().video;
   if (!v) return;
   if (v.paused) {
-    /* 未开声前保持 muted，避免再次被拦截 */
     if (svState.muted) v.muted = true;
     v.play().catch(function () {});
     svShowHint('播放');
@@ -678,8 +841,10 @@ function svTogglePlay() {
 
 function svToggleLike() {
   const item = svCurrent();
-  if (!item) return;
-  const key = item.id || item.url;
+  const key = svIsEmbedMode(svState.mode)
+    ? (svState.mode + ':' + svState.embedId)
+    : (item && (item.id || item.url));
+  if (!key) return;
   svState.liked[key] = !svState.liked[key];
   svUpdateChrome();
 }
@@ -688,6 +853,37 @@ function svSetPanelOpen(on) {
   svState.panelOpen = !!on;
   const root = svGetRoot();
   if (root) root.classList.toggle('panel-open', svState.panelOpen);
+}
+
+function svPlayBilibiliPreset() {
+  const els = svEls();
+  if (els.api) els.api.value = SV_PEPPA_BVID;
+  svSwitchToEmbedMode('bilibili', SV_PEPPA_BVID, { saveInput: true, closePanel: true });
+}
+
+function svPlayYoutubePreset() {
+  const demo = 'https://www.youtube.com/watch?v=' + SV_YT_DEMO_ID;
+  const els = svEls();
+  if (els.api) els.api.value = demo;
+  svSwitchToEmbedMode('youtube', SV_YT_DEMO_ID, {
+    saveInput: true,
+    closePanel: true,
+    inputValue: demo,
+  });
+}
+
+function svPromptPornhub() {
+  const els = svEls();
+  svSetPanelOpen(true);
+  if (els.api) {
+    els.api.placeholder = '粘贴 Pornhub 链接或 viewkey=xxxx';
+    els.api.value = '';
+    setTimeout(function () {
+      try { els.api.focus(); } catch (_) {}
+    }, 40);
+  }
+  svSetStatus('Pornhub：粘贴完整链接或 viewkey，再点「应用源」');
+  svShowHint('粘贴 PH 链接');
 }
 
 async function svOnApplySource() {
@@ -699,20 +895,29 @@ async function svOnApplySource() {
     try { if (els.api) els.api.focus(); } catch (_) {}
     return;
   }
+
+  const parsed = svParseEmbedInput(raw);
+  if (parsed) {
+    svSwitchToEmbedMode(parsed.platform, parsed.id, {
+      saveInput: true,
+      closePanel: true,
+      inputValue: raw,
+    });
+    return;
+  }
+
   if (!/^https?:\/\//i.test(raw)) {
-    svShowHint('请填写 http(s) 链接');
-    svSetStatus('地址需以 http 开头');
+    svShowHint('请填写 http(s) / BV / viewkey');
+    svSetStatus('未识别：可填 mp4、B站/YT/PH 链接、BV 号或 viewkey');
     return;
   }
   svWriteCustomApi(raw);
 
-  /* 直链 mp4/webm：立即换源播放 */
   if (/\.(mp4|webm|ogg|m3u8)(\?|$)/i.test(raw)) {
     svApplyDirectUrl(raw);
     return;
   }
 
-  /* 其它 http：先当直链试播，同时尝试当 API 拉取列表 */
   svApplyDirectUrl(raw);
   try {
     const feed = await svLoadFeedFromApi(raw);
@@ -748,9 +953,7 @@ function svBindUi(root) {
   const els = svEls(root);
 
   function stopBubble(e) {
-    try {
-      e.stopPropagation();
-    } catch (_) {}
+    try { e.stopPropagation(); } catch (_) {}
   }
 
   if (els.close) {
@@ -796,12 +999,38 @@ function svBindUi(root) {
       svOnApplySource();
     });
   }
+  if (els.btnBili) {
+    els.btnBili.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svPlayBilibiliPreset();
+    });
+  }
+  if (els.btnYt) {
+    els.btnYt.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svPlayYoutubePreset();
+    });
+  }
+  if (els.btnPh) {
+    els.btnPh.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svPromptPornhub();
+    });
+  }
   if (els.reset) {
     els.reset.addEventListener('click', function (e) {
       e.preventDefault();
       stopBubble(e);
       if (els.api) els.api.value = '';
       svWriteCustomApi('');
+      svWriteEmbedId('');
+      svWriteMode('native');
+      svState.embedId = '';
+      svState.lastEmbed = { mode: '', id: '' };
+      svSwitchToNativeMode();
       svState.feed = SV_BUILTIN_FEED.slice();
       svState.index = 0;
       svPlayCurrent();
@@ -811,7 +1040,6 @@ function svBindUi(root) {
     });
   }
 
-  /* 面板内：绝不让滑动逻辑插手 */
   if (els.panel) {
     ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'click'].forEach(function (evName) {
       els.panel.addEventListener(evName, function (e) {
@@ -843,6 +1071,7 @@ function svBindUi(root) {
 
     stage.addEventListener('touchend', function (e) {
       if (svIsInteractiveTarget(e.target)) return;
+      if (svIsEmbedMode(svState.mode)) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
       if (!t) return;
       const dy = t.clientY - svState.startY;
@@ -860,6 +1089,7 @@ function svBindUi(root) {
 
     stage.addEventListener('click', function (e) {
       if (svIsInteractiveTarget(e.target)) return;
+      if (svIsEmbedMode(svState.mode)) return;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
       e.preventDefault();
       e.stopPropagation();
@@ -869,13 +1099,13 @@ function svBindUi(root) {
     stage.addEventListener('wheel', function (e) {
       if (!svState.open) return;
       if (svIsInteractiveTarget(e.target)) return;
+      if (svIsEmbedMode(svState.mode)) return;
       e.preventDefault();
       if (e.deltaY > 24) svGo(1);
       else if (e.deltaY < -24) svGo(-1);
     }, { passive: false });
   }
 
-  /* 仅冒泡阶段拦截，绝不在 capture 里 stopPropagation（否则 input/button 收不到事件） */
   root.addEventListener('pointerdown', function (e) {
     if (svIsInteractiveTarget(e.target)) return;
     e.stopPropagation();
@@ -886,36 +1116,65 @@ function svBindUi(root) {
   }, { passive: true });
 }
 
+function svRestoreSavedEmbed(savedMode, savedId, savedCustom) {
+  if (svIsEmbedMode(savedMode) && savedId) {
+    return svSwitchToEmbedMode(savedMode, savedId, { saveInput: false, closePanel: true });
+  }
+  if (savedCustom) {
+    const parsed = svParseEmbedInput(savedCustom);
+    if (parsed) {
+      return svSwitchToEmbedMode(parsed.platform, parsed.id, {
+        saveInput: true,
+        closePanel: true,
+        inputValue: savedCustom,
+      });
+    }
+  }
+  return false;
+}
+
 export async function openShortVideoPlayer() {
   const root = svBuildDom();
   try {
     if (root.parentElement !== document.body) document.body.appendChild(root);
-    else document.body.appendChild(root); /* 再 append 一次保证置顶 */
+    else document.body.appendChild(root);
   } catch (_) {}
 
   svForceRootCss(root);
-  svState.muted = svReadMuted();
+  svState.muted = true;
+  svWriteMuted(true);
   svSetPanelOpen(false);
 
   const els = svEls(root);
-  if (els.api) els.api.value = svReadCustomApi();
+  const savedCustom = svReadCustomApi();
+  const savedMode = svReadMode();
+  const savedId = svReadEmbedId() ||
+    (savedMode === 'bilibili' ? svExtractBvId(savedCustom) : '') ||
+    '';
+  if (els.api) {
+    els.api.value = savedCustom || (svIsEmbedMode(savedMode) ? savedId : '');
+  }
 
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
   svState.open = true;
 
-  svSetStatus('加载片源中…');
-  try {
-    const custom = svReadCustomApi();
-    svState.feed = custom ? await svLoadFeedFromApi(custom) : SV_BUILTIN_FEED.slice();
-  } catch (_) {
-    svState.feed = SV_BUILTIN_FEED.slice();
-  }
-  if (!svState.feed.length) svState.feed = SV_BUILTIN_FEED.slice();
-  if (svState.index >= svState.feed.length) svState.index = 0;
-
   setTimeout(function () {
     svForceRootCss(root);
+    if (svRestoreSavedEmbed(savedMode, savedId, savedCustom)) return;
+
+    svSwitchToNativeMode();
+    try {
+      const isHttp = savedCustom && /^https?:\/\//i.test(savedCustom);
+      const isEmbed = savedCustom && svParseEmbedInput(savedCustom);
+      svState.feed = (isHttp && !isEmbed)
+        ? [{ id: 'saved', title: '已保存源', author: '@custom', url: savedCustom }].concat(SV_BUILTIN_FEED)
+        : SV_BUILTIN_FEED.slice();
+    } catch (_) {
+      svState.feed = SV_BUILTIN_FEED.slice();
+    }
+    if (!svState.feed.length) svState.feed = SV_BUILTIN_FEED.slice();
+    if (svState.index >= svState.feed.length) svState.index = 0;
     svPlayCurrent();
   }, 0);
 }
@@ -925,7 +1184,15 @@ export function closeShortVideoPlayer() {
   const els = svEls(root);
   if (els.video) {
     try { els.video.pause(); } catch (_) {}
+    try { els.video.muted = true; } catch (_) {}
   }
+  if (svIsEmbedMode(svState.mode) && svState.embedId) {
+    svState.lastEmbed = { mode: svState.mode, id: svState.embedId };
+    svWriteEmbedId(svState.embedId);
+    svWriteMode(svState.mode);
+  }
+  /* 立刻清空 iframe，防止后台漏声 */
+  svClearEmbedFrame();
   svSetPanelOpen(false);
   if (root) {
     root.classList.remove('is-open');
