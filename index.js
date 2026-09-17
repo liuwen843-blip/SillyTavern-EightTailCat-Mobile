@@ -422,6 +422,21 @@ function bindHostListenersOnce() {
       toggleShortVideoPlayer();
       return;
     }
+    if (data.type === 'eight-tail-media-play') {
+      const plat = data.platform;
+      openShortVideoPlayer().then(function () {
+        setTimeout(function () {
+          try {
+            if (plat === 'youtube' && typeof window.__etcPlayYoutube === 'function') {
+              window.__etcPlayYoutube();
+            } else if (plat === 'pornhub' && typeof window.__etcPlayPornhub === 'function') {
+              window.__etcPlayPornhub();
+            }
+          } catch (_) {}
+        }, 60);
+      });
+      return;
+    }
     if (
       data.type === 'eight-tail-open-short-video' ||
       data.type === 'eighttailcat-open-short-video' ||
