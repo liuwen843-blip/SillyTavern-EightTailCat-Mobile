@@ -7,7 +7,9 @@ const FRAME_ID = 'eighttailcat-frame-mobile';
 const SETTINGS_ID = 'eighttailcat-mobile-settings';
 const DOCK_ID = 'eighttailcat-mobile-dock';
 const VISIBLE_LS_KEY = 'EightTailCat-Pet-Mobile.visible';
-const TOP_SAFE = 50;
+const DOCK_TOP_LS_KEY = 'EightTailCat-Pet-Mobile.dockTop';
+/** 垂直安全边距：上/下各 10px */
+const EDGE_PAD = 10;
 
 const defaultSettings = {
   visible: true,
@@ -30,6 +32,20 @@ function writeVisibleToLocal(visible) {
   } catch (_) {}
 }
 
+function readDockTopFromLocal() {
+  try {
+    const n = parseFloat(localStorage.getItem(DOCK_TOP_LS_KEY));
+    if (!isNaN(n)) return n;
+  } catch (_) {}
+  return null;
+}
+
+function writeDockTopToLocal(top) {
+  try {
+    localStorage.setItem(DOCK_TOP_LS_KEY, String(top));
+  } catch (_) {}
+}
+
 function ensureSettings() {
   if (!extension_settings[MODULE]) {
     extension_settings[MODULE] = Object.assign({}, defaultSettings);
@@ -46,9 +62,11 @@ function ensureSettings() {
 
 function getExtBase() {
   try {
-    return new URL('./', import.meta.url).href;
+    let href = new URL('./', import.meta.url).href;
+    if (href.slice(-1) !== '/') href += '/';
+    return href;
   } catch (_) {
-    return './';
+    return '/scripts/extensions/third-party/EightTailCat-Pet-Mobile/';
   }
 }
 
@@ -69,16 +87,21 @@ function readOverlayPos(el) {
   const t = parseFloat(el.style.top);
   return {
     left: isNaN(l) ? 0 : l,
-    top: isNaN(t) ? TOP_SAFE : t,
+    top: isNaN(t) ? EDGE_PAD : t,
   };
 }
 
+/**
+ * 视口全屏边界：
+ * 水平 0 ~ innerWidth - petWidth
+ * 垂直 EDGE_PAD ~ innerHeight - petHeight - EDGE_PAD
+ */
 function clampOverlayPos(el, left, top) {
   const w = el.offsetWidth || 280;
   const h = el.offsetHeight || 360;
   const maxL = Math.max(0, window.innerWidth - w);
-  const minT = TOP_SAFE;
-  const maxT = Math.max(minT, window.innerHeight - h);
+  const minT = EDGE_PAD;
+  const maxT = Math.max(minT, window.innerHeight - h - EDGE_PAD);
   let x = Number(left);
   let y = Number(top);
   if (isNaN(x)) x = 0;
@@ -88,7 +111,7 @@ function clampOverlayPos(el, left, top) {
   return { left: x, top: y, w, h };
 }
 
-/** 使用 translate3d 定位，拖拽时无 transition，保证跟手 */
+/** 使用 translate3d 定位，拖拽时强制无 transition，保证跟手 */
 function setOverlayPos(el, left, top) {
   const pos = clampOverlayPos(el, left, top);
   el.style.transition = 'none';
@@ -127,7 +150,7 @@ function defaultBottomRight(el) {
     ? Math.min(720, window.innerHeight * 0.8)
     : Math.min(360, window.innerHeight * 0.55);
   const defL = Math.max(0, window.innerWidth - w - 8);
-  const defT = Math.max(TOP_SAFE, window.innerHeight - h - 8);
+  const defT = Math.max(EDGE_PAD, window.innerHeight - h - EDGE_PAD);
   return { left: defL, top: defT, w, h };
 }
 
@@ -141,7 +164,11 @@ function applySavedPos(el) {
 
 function placeExpandedSheet(el) {
   const def = defaultBottomRight(el);
-  return setOverlayPos(el, Math.max(0, (window.innerWidth - def.w) / 2), Math.max(TOP_SAFE, window.innerHeight - def.h - 8));
+  return setOverlayPos(
+    el,
+    Math.max(0, (window.innerWidth - def.w) / 2),
+    Math.max(EDGE_PAD, window.innerHeight - def.h - EDGE_PAD)
+  );
 }
 
 function savePos(left, top) {
@@ -180,20 +207,25 @@ function pointFromMessage(data) {
 
 function mountOverlay(base) {
   let overlay = document.getElementById(OVERLAY_ID);
-  if (overlay) return overlay;
+  if (overlay) {
+    if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
+    return overlay;
+  }
 
   overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
   overlay.setAttribute('aria-label', '八条猫桌宠 (移动触屏版)');
+  overlay.style.position = 'fixed';
+  overlay.style.zIndex = '9999';
   overlay.style.touchAction = 'none';
   overlay.style.willChange = 'transform';
+  overlay.style.transition = 'none';
 
   const iframe = document.createElement('iframe');
   iframe.id = FRAME_ID;
   iframe.title = '八条猫桌宠 (移动触屏版)';
   iframe.setAttribute('allowtransparency', 'true');
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-  /* 使用移动端深度适配后的 index.html */
   iframe.src = (base || getExtBase()) + 'index.html';
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
@@ -255,6 +287,7 @@ function mountOverlay(base) {
   window.addEventListener('resize', function () {
     const cur = readOverlayPos(overlay);
     setOverlayPos(overlay, cur.left, cur.top);
+    clampDockPosition();
   });
 
   syncDock();
@@ -391,22 +424,129 @@ function scheduleSettingsInjection() {
   } catch (_) {}
 }
 
-/** 右缘常驻极小猫爪：一键收起/展开桌宠 */
+function clampDockTop(top, dockH) {
+  const h = dockH || 42;
+  const minT = EDGE_PAD;
+  const maxT = Math.max(minT, window.innerHeight - h - EDGE_PAD);
+  let y = Number(top);
+  if (isNaN(y)) y = Math.max(minT, (window.innerHeight - h) / 2);
+  return Math.min(maxT, Math.max(minT, y));
+}
+
+function applyDockTop(dock, top) {
+  const y = clampDockTop(top, dock.offsetHeight || 42);
+  dock.style.top = y + 'px';
+  dock.style.right = '0';
+  dock.style.bottom = 'auto';
+  dock.style.transform = 'none';
+  dock.dataset.dockTop = String(y);
+  return y;
+}
+
+function clampDockPosition() {
+  const dock = document.getElementById(DOCK_ID);
+  if (!dock) return;
+  const saved = dock.dataset.dockTop != null
+    ? parseFloat(dock.dataset.dockTop)
+    : readDockTopFromLocal();
+  if (saved == null || isNaN(saved)) {
+    /* 默认右侧垂直居中 */
+    const h = dock.offsetHeight || 42;
+    applyDockTop(dock, (window.innerHeight - h) / 2);
+    return;
+  }
+  applyDockTop(dock, saved);
+}
+
+/**
+ * 右缘半圆猫爪悬浮球：42×42、可上下拖、点击显隐桌宠与侧边快捷钮
+ */
 function ensureDock() {
   let dock = document.getElementById(DOCK_ID);
-  if (dock) return dock;
+  if (dock) {
+    if (dock.parentNode !== document.body) document.body.appendChild(dock);
+    return dock;
+  }
+
   dock = document.createElement('button');
   dock.id = DOCK_ID;
   dock.type = 'button';
   dock.setAttribute('aria-label', '显示或隐藏八条猫');
   dock.title = '显示 / 隐藏桌宠';
-  dock.innerHTML = '<span aria-hidden="true">🐾</span>';
-  dock.addEventListener('click', function (e) {
+  dock.innerHTML = '<span class="etc-dock-paw" aria-hidden="true">🐾</span>';
+
+  let dragging = false;
+  let moved = false;
+  let startY = 0;
+  let originTop = 0;
+  let pointerId = null;
+
+  function onPointerDown(e) {
+    if (e.button != null && e.button !== 0) return;
+    dragging = true;
+    moved = false;
+    pointerId = e.pointerId;
+    startY = e.clientY;
+    const cur = parseFloat(dock.dataset.dockTop);
+    originTop = !isNaN(cur) ? cur : (dock.getBoundingClientRect().top);
+    dock.classList.add('is-dragging');
+    dock.style.transition = 'none';
+    try { dock.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onPointerMove(e) {
+    if (!dragging) return;
+    if (pointerId != null && e.pointerId !== pointerId) return;
+    const dy = e.clientY - startY;
+    if (!moved && Math.abs(dy) > 8) moved = true;
+    if (!moved) return;
+    applyDockTop(dock, originTop + dy);
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function onPointerUp(e) {
+    if (!dragging) return;
+    if (pointerId != null && e.pointerId !== pointerId) return;
+    dragging = false;
+    dock.classList.remove('is-dragging');
+    try { dock.releasePointerCapture(e.pointerId); } catch (_) {}
+    pointerId = null;
+    if (moved) {
+      const y = applyDockTop(dock, parseFloat(dock.dataset.dockTop));
+      writeDockTopToLocal(y);
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    /* 未滑动：视为点击，一键显隐猫咪 + 侧边快捷键（均在 overlay 内） */
     e.preventDefault();
     e.stopPropagation();
     togglePet();
+  }
+
+  dock.addEventListener('pointerdown', onPointerDown);
+  dock.addEventListener('pointermove', onPointerMove);
+  dock.addEventListener('pointerup', onPointerUp);
+  dock.addEventListener('pointercancel', onPointerUp);
+  /* 阻止默认 click，避免与 pointer 逻辑重复触发 */
+  dock.addEventListener('click', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
   });
+
   document.body.appendChild(dock);
+
+  const savedTop = readDockTopFromLocal();
+  if (savedTop != null) {
+    applyDockTop(dock, savedTop);
+  } else {
+    const h = 42;
+    applyDockTop(dock, (window.innerHeight - h) / 2);
+  }
+
   syncDock();
   return dock;
 }
@@ -434,6 +574,7 @@ jQuery(async function () {
         injectSettingsDrawer().catch(function () {});
         ensureDock();
         syncDock();
+        clampDockPosition();
       });
     }
   } catch (_) {}

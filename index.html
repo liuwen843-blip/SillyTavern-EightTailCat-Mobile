@@ -35,10 +35,21 @@
           document.documentElement.classList.add("st-extension-host");
         }
       } catch (_) {}
+      /* 动态扩展根路径：禁止写死 ./cat1.png，保证 Termux / 第三方扩展目录均可加载资源 */
+      try {
+        window.EXTENSION_BASE_PATH = new URL("./", location.href).href;
+      } catch (_) {
+        window.EXTENSION_BASE_PATH = "/scripts/extensions/third-party/EightTailCat-Pet-Mobile/";
+      }
+      if (window.EXTENSION_BASE_PATH.slice(-1) !== "/") {
+        window.EXTENSION_BASE_PATH += "/";
+      }
+      window.CAT_IMG_IDLE = window.EXTENSION_BASE_PATH + "assets/cat1.png";
+      window.CAT_IMG_BITE = window.EXTENSION_BASE_PATH + "assets/cat2.png";
     })();
   </script>
-  <!-- 由 main.py 本地 HTTP 注入：__PET_FS_ROOT__ / __PET_HTTP_BASE__ -->
-  <script src="/__pet_runtime.js"></script>
+  <!-- 由 main.py 本地 HTTP 注入（独立桌宠模式）；酒馆 iframe 下 404 可忽略 -->
+  <script src="/__pet_runtime.js" onerror=""></script>
   <style>
     :root {
       /* 语义主题变量（可被 theme-* class 覆盖） */
@@ -1376,115 +1387,81 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
-      padding: 56px 16px 16px;
+      padding: 56px 18px 24px;
       box-sizing: border-box;
+      justify-content: center;
     }
     #app-hub-modal .app-hub-title {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 700;
       margin: 0 0 6px;
       letter-spacing: 0.02em;
+      text-align: center;
     }
     #app-hub-modal .app-hub-sub {
       font-size: 12px;
       color: rgba(248, 250, 252, 0.65);
-      margin: 0 0 18px;
+      margin: 0 0 28px;
+      text-align: center;
+      line-height: 1.5;
     }
     #app-hub-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 16px;
+      gap: 16px;
+      max-width: 360px;
+      margin: 0 auto;
+      width: 100%;
     }
     .app-hub-icon {
       appearance: none;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      border-radius: 22px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
+      box-shadow:
+        6px 6px 14px rgba(0, 0, 0, 0.35),
+        -4px -4px 12px rgba(255, 255, 255, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.18);
       color: #fff;
-      padding: 16px 8px 12px;
+      padding: 18px 8px 14px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       cursor: pointer;
       touch-action: manipulation;
-      min-height: 96px;
+      min-height: 112px;
+      -webkit-tap-highlight-color: transparent;
     }
     .app-hub-icon:active {
-      transform: scale(0.96);
-      background: rgba(255, 255, 255, 0.16);
+      transform: scale(0.94);
+      box-shadow:
+        inset 4px 4px 10px rgba(0, 0, 0, 0.35),
+        inset -2px -2px 8px rgba(255, 255, 255, 0.05);
     }
     .app-hub-icon .app-emoji {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
+      width: 56px;
+      height: 56px;
+      border-radius: 16px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 26px;
-      background: rgba(255, 255, 255, 0.12);
+      font-size: 28px;
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
+    .app-hub-icon[data-app="douyin"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
+    .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
+    .app-hub-icon[data-app="discord"] .app-emoji { background: linear-gradient(160deg, #7289da, #5865f2); }
     .app-hub-icon .app-name {
       font-size: 13px;
       font-weight: 600;
     }
-    #app-hub-stage {
-      flex: 1;
-      min-height: 0;
-      display: none;
-      flex-direction: column;
-      border-radius: 16px;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      background: #0b0f14;
+    .app-hub-icon .app-open-hint {
+      font-size: 10px;
+      opacity: 0.55;
+      font-weight: 400;
     }
-    #app-hub-stage.active {
-      display: flex;
-    }
-    #app-hub-stage-bar {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: rgba(255, 255, 255, 0.06);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    }
-    #app-hub-stage-bar .app-stage-title {
-      flex: 1;
-      font-size: 13px;
-      font-weight: 600;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    #app-hub-stage-bar button {
-      appearance: none;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 12px;
-      min-height: 34px;
-      touch-action: manipulation;
-    }
-    #app-hub-frame {
-      flex: 1;
-      width: 100%;
-      border: 0;
-      background: #fff;
-      min-height: 0;
-    }
-    #app-hub-fallback {
-      display: none;
-      padding: 20px 16px;
-      color: rgba(248, 250, 252, 0.8);
-      font-size: 13px;
-      line-height: 1.5;
-    }
-    #app-hub-fallback.show { display: block; }
 
     #game-modal,
     .game-modal {
@@ -3675,7 +3652,7 @@
   <div id="stage">
     <div id="pet" class="pre-enter classic-mode pet-float-wrapper">
       <div id="cat-wrap" class="pet-classic-hachikyu">
-        <img id="cat" src="cat1.png" alt="八条猫" draggable="false" />
+        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" />
         <video id="pet-video" autoplay loop muted playsinline
           style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:none;"></video>
         <div id="bead-hat" aria-hidden="true"><img alt="" /></div>
@@ -3838,29 +3815,23 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭应用中心">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用中心</h3>
-        <p class="app-hub-sub">点选进入移动端网页，可独立登录与使用</p>
+        <p class="app-hub-sub">官方站点禁止 iframe 内嵌。<br />点击图标将在新标签页安全打开。</p>
         <div id="app-hub-grid" aria-label="应用列表">
-          <button type="button" class="app-hub-icon" data-app="douyin" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
+          <button type="button" class="app-hub-icon" data-app="douyin" data-url="https://www.douyin.com/">
             <span class="app-emoji" aria-hidden="true">🎵</span>
             <span class="app-name">抖音</span>
+            <span class="app-open-hint">新窗口</span>
           </button>
-          <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-url="https://www.xiaohongshu.com/" data-murl="https://www.xiaohongshu.com/explore">
+          <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-url="https://www.xiaohongshu.com/explore">
             <span class="app-emoji" aria-hidden="true">📕</span>
             <span class="app-name">小红书</span>
+            <span class="app-open-hint">新窗口</span>
           </button>
-          <button type="button" class="app-hub-icon" data-app="discord" data-url="https://discord.com/login" data-murl="https://discord.com/login">
+          <button type="button" class="app-hub-icon" data-app="discord" data-url="https://discord.com/app">
             <span class="app-emoji" aria-hidden="true">💬</span>
             <span class="app-name">Discord</span>
+            <span class="app-open-hint">新窗口</span>
           </button>
-        </div>
-        <div id="app-hub-stage" aria-live="polite">
-          <div id="app-hub-stage-bar">
-            <button type="button" id="app-hub-back">‹ 返回</button>
-            <span class="app-stage-title" id="app-hub-stage-title">应用</span>
-            <button type="button" id="app-hub-open-ext">外部打开</button>
-          </div>
-          <iframe id="app-hub-frame" title="应用内嵌页" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation" referrerpolicy="no-referrer"></iframe>
-          <div id="app-hub-fallback">该站点可能禁止内嵌。请点「外部打开」在系统浏览器中继续登录使用。</div>
         </div>
       </div>
     </div>
@@ -6406,6 +6377,37 @@
       const settingsEl = document.getElementById("settings");
       const body = document.body;
       const ttsAudio = document.getElementById("tts-audio");
+      const EXTENSION_BASE_PATH = (function () {
+        if (window.EXTENSION_BASE_PATH) return String(window.EXTENSION_BASE_PATH);
+        try {
+          let href = new URL("./", location.href).href;
+          if (href.slice(-1) !== "/") href += "/";
+          return href;
+        } catch (_) {
+          return "/scripts/extensions/third-party/EightTailCat-Pet-Mobile/";
+        }
+      })();
+      const CAT_IMG_IDLE = window.CAT_IMG_IDLE || (EXTENSION_BASE_PATH + "assets/cat1.png");
+      const CAT_IMG_BITE = window.CAT_IMG_BITE || (EXTENSION_BASE_PATH + "assets/cat2.png");
+      if (cat) {
+        cat.src = CAT_IMG_IDLE;
+        cat.addEventListener("error", function onCatImgErr() {
+          cat.removeEventListener("error", onCatImgErr);
+          const fallbacks = [
+            EXTENSION_BASE_PATH + "assets/cat1.png",
+            EXTENSION_BASE_PATH + "cat1.png",
+            "assets/cat1.png"
+          ];
+          let i = 0;
+          const tryNext = function () {
+            if (i >= fallbacks.length) return;
+            const next = fallbacks[i++];
+            if (cat.src && cat.src.indexOf(next) >= 0) return tryNext();
+            cat.src = next;
+          };
+          tryNext();
+        }, { once: true });
+      }
       const IS_SETTINGS_WINDOW =
         document.documentElement.classList.contains("settings-window") ||
         /(?:^\?|&)view=settings(?:&|$)/.test(location.search || "");
@@ -8119,8 +8121,8 @@
         pet.classList.remove("gif-mode", "video-mode", "static-mode");
         stopPetVideo();
         if (cat) cat.classList.remove("pet-static");
-        if (typeof state !== "undefined" && state === "biting") cat.src = "cat2.png";
-        else cat.src = "cat1.png";
+        if (typeof state !== "undefined" && state === "biting") cat.src = CAT_IMG_BITE;
+        else cat.src = CAT_IMG_IDLE;
         if (cat) cat.style.display = "block";
       }
 
@@ -12582,14 +12584,6 @@
         if (modal) {
           modal.classList.remove("open");
           modal.setAttribute("aria-hidden", "true");
-          const stage = document.getElementById("app-hub-stage");
-          const frame = document.getElementById("app-hub-frame");
-          const fallback = document.getElementById("app-hub-fallback");
-          if (stage) stage.classList.remove("active");
-          if (frame) {
-            try { frame.src = "about:blank"; } catch (_) {}
-          }
-          if (fallback) fallback.classList.remove("show");
         }
         try { syncCapsuleOverlay(); } catch (_) {}
       }
@@ -12825,7 +12819,7 @@
         }, 1000);
       }
 
-      let appHubCurrentUrl = "";
+      let appHubCurrentUrl = ""; // 保留变量名兼容旧调用（应用中心已改为外开）
 
       function openAppHubModal() {
         if (IS_SETTINGS_WINDOW) return;
@@ -12837,10 +12831,6 @@
         if (memoPanel) memoPanel.classList.remove("open");
         const chatPanel = document.getElementById("chat-panel");
         if (chatPanel) chatPanel.classList.remove("open");
-        const stage = document.getElementById("app-hub-stage");
-        const fallback = document.getElementById("app-hub-fallback");
-        if (stage) stage.classList.remove("active");
-        if (fallback) fallback.classList.remove("show");
         modal.classList.add("open");
         modal.setAttribute("aria-hidden", "false");
         try { syncCapsuleOverlay(); } catch (_) {}
@@ -12848,27 +12838,29 @@
         markActivity();
       }
 
-      function openAppInHub(name, url, mobileUrl) {
-        const stage = document.getElementById("app-hub-stage");
-        const frame = document.getElementById("app-hub-frame");
-        const title = document.getElementById("app-hub-stage-title");
-        const fallback = document.getElementById("app-hub-fallback");
-        const target = mobileUrl || url;
-        appHubCurrentUrl = target;
-        if (title) title.textContent = name || "应用";
-        if (fallback) fallback.classList.remove("show");
-        if (stage) stage.classList.add("active");
-        if (frame) {
-          frame.onload = function () {
-            /* 部分站点空白/拦截时仍给用户外部打开入口 */
-            setTimeout(function () {
-              if (fallback) fallback.classList.add("show");
-            }, 1800);
-          };
-          try { frame.src = target; } catch (_) {
-            if (fallback) fallback.classList.add("show");
+      /** 官方站点禁止 iframe：一律新标签页打开 */
+      function openAppInHub(name, url) {
+        const target = String(url || "").trim();
+        if (!target) return;
+        let opened = null;
+        try {
+          opened = window.open(target, "_blank", "noopener,noreferrer");
+        } catch (_) {}
+        if (!opened) {
+          try {
+            const a = document.createElement("a");
+            a.href = target;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+          } catch (_) {
+            try { location.href = target; } catch (__) {}
           }
         }
+        try { showToast((name || "应用") + " 已在新窗口打开", 1600); } catch (_) {}
       }
 
       function bindAppHubUi() {
@@ -12876,8 +12868,6 @@
         window.__appHubUiBound = true;
         const modal = document.getElementById("app-hub-modal");
         const closeBtn = document.getElementById("app-hub-close");
-        const backBtn = document.getElementById("app-hub-back");
-        const openExt = document.getElementById("app-hub-open-ext");
         const grid = document.getElementById("app-hub-grid");
         if (closeBtn) {
           closeBtn.addEventListener("click", function (e) {
@@ -12886,35 +12876,16 @@
             closeAppHubModal();
           });
         }
-        if (backBtn) {
-          backBtn.addEventListener("click", function (e) {
-            e.preventDefault();
-            const stage = document.getElementById("app-hub-stage");
-            const frame = document.getElementById("app-hub-frame");
-            if (stage) stage.classList.remove("active");
-            if (frame) {
-              try { frame.src = "about:blank"; } catch (_) {}
-            }
-            appHubCurrentUrl = "";
-          });
-        }
-        if (openExt) {
-          openExt.addEventListener("click", function (e) {
-            e.preventDefault();
-            if (!appHubCurrentUrl) return;
-            try { window.open(appHubCurrentUrl, "_blank", "noopener,noreferrer"); } catch (_) {}
-          });
-        }
         if (grid) {
           grid.addEventListener("click", function (e) {
             const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
             if (!btn) return;
             e.preventDefault();
+            e.stopPropagation();
             const nameEl = btn.querySelector(".app-name");
             openAppInHub(
               (nameEl && nameEl.textContent) || btn.getAttribute("data-app"),
-              btn.getAttribute("data-url"),
-              btn.getAttribute("data-murl")
+              btn.getAttribute("data-url")
             );
           });
         }
@@ -16325,12 +16296,13 @@
         const petH = pet.offsetHeight || 238;
         const winW = window.innerWidth || document.documentElement.clientWidth || petW;
         const winH = window.innerHeight || document.documentElement.clientHeight || petH;
-        const topSafe = 50;
-        /* 中心点坐标：等价左上角 [0, W-petW] × [topSafe, H-petH] */
+        const topPad = 10;
+        const bottomPad = 10;
+        /* 中心点坐标：等价左上角 [0, W-petW] × [10, H-petH-10] */
         const minX = petW / 2;
         const maxX = Math.max(minX, winW - petW / 2);
-        const minY = topSafe + petH / 2;
-        const maxY = Math.max(minY, winH - petH / 2);
+        const minY = topPad + petH / 2;
+        const maxY = Math.max(minY, winH - bottomPad - petH / 2);
         return {
           x: Math.min(maxX, Math.max(minX, Number(x) || 0)),
           y: Math.min(maxY, Math.max(minY, Number(y) || 0))
@@ -16359,7 +16331,7 @@
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           triggerClickedVisual();
         } else {
-          cat.src = "cat2.png";
+          cat.src = CAT_IMG_BITE;
         }
         body.classList.add("hiding-cursor");
         biteClicks = 1;
@@ -16403,7 +16375,7 @@
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           resolveVisualAfterTemp();
         } else {
-          cat.src = "cat1.png";
+          cat.src = CAT_IMG_IDLE;
         }
         body.classList.remove("hiding-cursor");
         hideBubble();
@@ -16668,8 +16640,9 @@
 
       function resolvePetTap(point) {
         lastTapPoint = point || lastTapPoint;
-        if (awaitingSecondClick && clickTimer) {
-          clearTimeout(clickTimer);
+        /* 触屏双击：280ms 内第二次点击立刻开设置；超时才触发单击 */
+        if (awaitingSecondClick) {
+          if (clickTimer) clearTimeout(clickTimer);
           clickTimer = null;
           awaitingSecondClick = false;
           handlePetDoubleTap();
