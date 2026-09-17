@@ -142,15 +142,46 @@
   transition: none !important;
 }
 
-/* 短视频根节点由 short-video.js 注入样式；此处兜底确保永远盖住酒馆 */
+/* 短视频全屏沉浸：压过桌宠，强制占满视口 */
 #eight-tail-short-video-root {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 99999 !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
+  z-index: 100002 !important;
+  display: none !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  pointer-events: auto !important;
+  transform: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+#eight-tail-short-video-root.is-open {
+  display: flex !important;
+}
+
+#eight-tail-short-video-root,
+#eight-tail-short-video-root * {
   pointer-events: auto !important;
 }
 
+#eight-tail-sv-video {
+  pointer-events: none !important;
+}
+
 #eight-tail-sv-close {
-  z-index: 100002 !important;
+  z-index: 100003 !important;
   pointer-events: auto !important;
+  background: rgba(239, 68, 68, 0.88) !important;
 }
