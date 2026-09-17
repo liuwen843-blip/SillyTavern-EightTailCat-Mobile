@@ -1,0 +1,52 @@
+/* 酒馆宿主层（移动触屏版）：更小浮层 + 右下角默认位。主体样式在 pet.html 内。 */
+#pet-container-mobile {
+  position: fixed;
+  z-index: 9999;
+  /* 约原 PC 浮层 70% */
+  width: min(294px, 70vw);
+  height: min(392px, 55vh);
+  pointer-events: auto;
+  background: transparent;
+  border: 0;
+  overflow: visible;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+#pet-container-mobile.eighttailcat-expanded {
+  width: min(96vw, 520px);
+  height: min(80vh, 720px);
+}
+
+#pet-container-mobile.eighttailcat-hidden {
+  display: none !important;
+}
+
+#pet-container-mobile iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: none;
+  touch-action: none;
+}
+
+#eighttailcat-mobile-settings {
+  margin: 0.5rem 0;
+}
+
+#eighttailcat-mobile-settings .eighttailcat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#eighttailcat-mobile-open-panel,
+#eighttailcat-mobile-toggle-pet {
+  cursor: pointer;
+  min-height: 40px;
+  touch-action: manipulation;
+}

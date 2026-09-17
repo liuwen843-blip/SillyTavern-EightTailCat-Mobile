@@ -1,0 +1,15 @@
+{
+  "name": "EightTailCat-Pet-Mobile",
+  "display_name": "八条猫桌宠 (移动触屏版)",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "dependencies": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "liuwen843-blip",
+  "version": "1.0.0-mobile",
+  "homePage": "https://github.com/liuwen843-blip",
+  "auto_update": false,
+  "description": "八条猫桌宠移动触屏版：缩小贴靠右下角、支持 Touch 拖拽，设置面板为手机底部抽屉式布局，避免与 PC 版扩展冲突。"
+}
