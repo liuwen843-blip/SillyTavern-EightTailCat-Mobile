@@ -231,6 +231,9 @@
       border: 0 !important;
       outline: none !important;
       background: transparent !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      pointer-events: none !important;
     }
     /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #eight-tail-pet-mobile-root 承担 */
     html.st-extension-host #pet {
@@ -274,40 +277,110 @@
       border: 0 !important;
       background: transparent !important;
     }
-    /* 酒馆 iframe：整页透明穿透，仅猫咪与控件可点，避免透明白板挡宿主 */
+    /* 酒馆 iframe：整页透明穿透，仅猫咪本体与控件可点，避免透明白板挡宿主 */
     html.st-extension-host,
     html.st-extension-host body,
     html.st-extension-host #stage {
       pointer-events: none !important;
       background: transparent !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
+    /* 外层大容器穿透：空白透明区不拦截酒馆按钮 */
     html.st-extension-host #pet,
-    html.st-extension-host #pet * {
-      pointer-events: auto;
+    #pet.pet-float-wrapper,
+    #pet {
+      pointer-events: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
     }
+    /* 真正需要交互的子元素单独开启点击 */
+    html.st-extension-host #cat-wrap,
+    html.st-extension-host #cat,
+    html.st-extension-host #pet-video,
+    html.st-extension-host #cat-wrap canvas,
+    html.st-extension-host canvas.pet-canvas,
     html.st-extension-host #pet .action-btn,
-    html.st-extension-host #bubble,
+    html.st-extension-host #pet .pet-action-btn,
+    html.st-extension-host #pet .pet-btn-item,
+    html.st-extension-host #pet .app-hub-btn,
+    html.st-extension-host #pet .pet-quit-btn,
     html.st-extension-host #chat-spark,
     html.st-extension-host #memo-btn,
     html.st-extension-host #food-btn,
     html.st-extension-host #game-btn,
     html.st-extension-host #btn-pet-quit,
-    html.st-extension-host #cfg-modal,
-    html.st-extension-host #game-modal,
-    html.st-extension-host #app-hub-modal,
-    html.st-extension-host #feed-tray-modal,
-    html.st-extension-host #memo-panel,
-    html.st-extension-host #chat-panel,
-    html.st-extension-host .mobile-fullscreen-view {
+    html.st-extension-host #fav-star,
+    html.st-extension-host #bubble.show,
+    html.st-extension-host #bubble.show *,
+    html.st-extension-host .pet-dialog-bubble,
+    html.st-extension-host .info-capsule-badge.show,
+    html.st-extension-host .pet-countdown-capsule,
+    html.st-extension-host #food-reel.show,
+    html.st-extension-host #food-reel.show *,
+    html.st-extension-host #cfg-modal.is-open,
+    html.st-extension-host #cfg-modal.is-open *,
+    html.st-extension-host #game-modal.open,
+    html.st-extension-host #game-modal.open *,
+    html.st-extension-host #app-hub-modal.open,
+    html.st-extension-host #app-hub-modal.open *,
+    html.st-extension-host #feed-tray-modal.open,
+    html.st-extension-host #feed-tray-modal.open *,
+    html.st-extension-host #memo-panel.open,
+    html.st-extension-host #memo-panel.open *,
+    html.st-extension-host #chat-panel.open,
+    html.st-extension-host #chat-panel.open *,
+    html.st-extension-host .mobile-fullscreen-view,
+    html.st-extension-host .mobile-fullscreen-view *,
+    html.st-extension-host #picacg-main-container.is-open,
+    html.st-extension-host #picacg-main-container.is-open *,
+    html.st-extension-host #picacg-auth-modal.is-open,
+    html.st-extension-host #picacg-auth-modal.is-open *,
+    html.st-extension-host #video-app-container.is-open,
+    html.st-extension-host #video-app-container.is-open *,
+    #cat-wrap,
+    #cat,
+    #pet-video,
+    #cat-wrap canvas,
+    canvas.pet-canvas,
+    #pet .action-btn,
+    #pet .pet-action-btn,
+    #pet .pet-btn-item,
+    #pet .app-hub-btn,
+    #chat-spark,
+    #memo-btn,
+    #food-btn,
+    #game-btn,
+    #btn-pet-quit,
+    #fav-star,
+    #bubble.show,
+    #bubble.show .bubble-content,
+    #bubble.show #fav-star,
+    .info-capsule-badge.show,
+    #food-reel.show {
       pointer-events: auto !important;
     }
-    /* 入场动画未完成时也强制可见，防止卡在 opacity:0 */
+    /* 倒计时胶囊容器本身穿透，仅亮起的徽章可点 */
+    html.st-extension-host #care-badges,
+    html.st-extension-host .bottom-badges-container,
+    #care-badges,
+    .bottom-badges-container {
+      pointer-events: none !important;
+    }
+    /* 入场动画未完成时也强制可见；外层仍穿透，本体可点 */
     html.st-extension-host #pet.pre-enter,
     html.st-extension-host #pet.entering {
       opacity: 1 !important;
-      pointer-events: auto !important;
+      pointer-events: none !important;
       transform: translate(-50%, -50%) !important;
       animation: none !important;
+    }
+    html.st-extension-host #pet.pre-enter #cat-wrap,
+    html.st-extension-host #pet.entering #cat-wrap {
+      pointer-events: auto !important;
     }
     /* 气泡 / 侧栏按钮压在猫咪之上，禁止裁切 */
     html.st-extension-host #bubble {
@@ -436,6 +509,9 @@
       overflow: visible !important;
       border: 0 !important;
       background: transparent !important;
+      padding: 0 !important;
+      pointer-events: auto !important;
+      touch-action: none;
     }
 
     /* 经典八条待机：内层 Q 弹 + 眨眼（说话/打字/咬住/投喂时让位） */
@@ -462,7 +538,7 @@
       display: block;
       width: 100%;
       height: auto;
-      pointer-events: none;
+      pointer-events: auto !important;
       background: transparent;
       outline: none;
       border: none;
@@ -496,7 +572,7 @@
       width: 100%;
       height: auto;
       object-fit: contain;
-      pointer-events: none;
+      pointer-events: auto !important;
       background: transparent;
       vertical-align: top;
       outline: none;
@@ -3805,7 +3881,7 @@
       <div id="cat-wrap" class="pet-classic-hachikyu">
         <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" onerror="this.onerror=null;this.style.display='none';var f=document.getElementById('cat-fallback');if(f){f.hidden=false;f.style.display='flex';}" /><div id="cat-fallback" hidden aria-hidden="true" style="display:none;width:100%;aspect-ratio:1;align-items:center;justify-content:center;font-size:72px;line-height:1;border:0;outline:none;background:transparent;user-select:none;pointer-events:none;">🐱</div>
         <video id="pet-video" autoplay loop muted playsinline
-          style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:none;"></video>
+          style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:auto;"></video>
         <div id="bead-hat" aria-hidden="true"><img alt="" /></div>
       </div>
       <!-- 气泡放在角色之后并提高 z-index -->
@@ -17293,14 +17369,15 @@
       setInterval(reportHitRect, 200);
       window.addEventListener("resize", reportHitRect);
 
-      /* 悬停「盯——」 */
-      pet.addEventListener("mouseenter", function () {
+      /* 悬停「盯——」：绑在本体上（外层 #pet 已穿透，mouseenter 不会冒泡） */
+      const hoverTarget = catWrap || pet;
+      hoverTarget.addEventListener("mouseenter", function () {
         if (state !== IDLE) return;
         if (bubble.classList.contains("show") && !bubble.classList.contains("hover-tip")) return;
         hoverLocked = true;
         showBubble(t("bubble.stare"), { hover: true, favoritable: false, duration: 0 });
       });
-      pet.addEventListener("mouseleave", function () {
+      hoverTarget.addEventListener("mouseleave", function () {
         hoverLocked = false;
         if (bubble.classList.contains("hover-tip")) hideBubble();
       });

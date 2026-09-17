@@ -276,8 +276,8 @@ function ensureOverlayOnBody(el) {
     el.style.setProperty('pointer-events', 'none', 'important');
     el.style.setProperty('transition', 'none', 'important');
     if (!el.classList.contains('eighttailcat-expanded')) {
-      el.style.setProperty('width', 'min(300px, 78vw)', 'important');
-      el.style.setProperty('height', 'min(400px, 72vh)', 'important');
+      el.style.setProperty('width', 'min(260px, 72vw)', 'important');
+      el.style.setProperty('height', 'min(300px, 58vh)', 'important');
     }
     /* 尊重显隐：隐藏时绝不再强制 display:block */
     if (isRootHidden(el) || !ensureSettings().visible) {
@@ -299,6 +299,106 @@ function forceShowStyles(el) {
   el.style.setProperty('display', 'block', 'important');
   el.style.setProperty('visibility', 'visible', 'important');
   el.style.setProperty('opacity', '1', 'important');
+}
+
+/**
+ * 判断 iframe 内命中点是否落在可交互桌宠元素上
+ * （外层透明区域应穿透到酒馆 UI）
+ */
+function isPetInteractiveHit(el) {
+  if (!el || !el.closest) return false;
+  try {
+    if (el.closest('#cat-wrap') || el.closest('#cat') || el.closest('#pet-video')) return true;
+    if (el.closest('canvas.pet-canvas') || el.closest('#cat-wrap canvas')) return true;
+    if (el.closest('button') || el.closest('.action-btn') || el.closest('.app-hub-btn')) return true;
+    if (el.closest('#chat-spark') || el.closest('#memo-btn') || el.closest('#food-btn')) return true;
+    if (el.closest('#game-btn') || el.closest('#btn-pet-quit') || el.closest('#fav-star')) return true;
+    if (el.closest('#bubble.show') || el.closest('.pet-dialog-bubble')) return true;
+    if (el.closest('.info-capsule-badge.show') || el.closest('.pet-countdown-capsule')) return true;
+    if (el.closest('#food-reel.show')) return true;
+    if (el.closest('.cfg-modal.is-open') || el.closest('#game-modal.open')) return true;
+    if (el.closest('#app-hub-modal.open') || el.closest('#feed-tray-modal.open')) return true;
+    if (el.closest('#memo-panel.open') || el.closest('#chat-panel.open')) return true;
+    if (el.closest('.mobile-fullscreen-view')) return true;
+    if (el.closest('#picacg-main-container.is-open') || el.closest('#picacg-auth-modal.is-open')) return true;
+    if (el.closest('#video-app-container.is-open') || el.closest('#eight-tail-short-video-root.is-open')) return true;
+  } catch (_) {}
+  return false;
+}
+
+let _etcPeBound = false;
+let _etcPeHoldUntil = 0;
+
+function setIframePointerEvents(iframe, on) {
+  if (!iframe) return;
+  if (on) {
+    iframe.classList.add('etc-pe-on');
+    iframe.style.setProperty('pointer-events', 'auto', 'important');
+  } else {
+    iframe.classList.remove('etc-pe-on');
+    iframe.style.setProperty('pointer-events', 'none', 'important');
+  }
+}
+
+function hitTestPetIframe(iframe, clientX, clientY) {
+  if (!iframe) return false;
+  let doc = null;
+  try { doc = iframe.contentDocument; } catch (_) { return true; }
+  if (!doc) return false;
+  const r = iframe.getBoundingClientRect();
+  if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return false;
+  const x = clientX - r.left;
+  const y = clientY - r.top;
+  let el = null;
+  try { el = doc.elementFromPoint(x, y); } catch (_) { return false; }
+  return isPetInteractiveHit(el);
+}
+
+/**
+ * 宿主层：iframe 默认可穿透；仅当指针落在猫咪/按钮等可点区域时临时开启
+ */
+function setupIframeClickThrough(iframe) {
+  if (!iframe || _etcPeBound) return;
+  _etcPeBound = true;
+  setIframePointerEvents(iframe, false);
+
+  function syncPe(e) {
+    const root = getRoot();
+    const frame = document.getElementById(FRAME_ID) || iframe;
+    if (!root || !frame || isRootHidden(root)) {
+      setIframePointerEvents(frame, false);
+      return;
+    }
+    /* 展开设置/全屏面板时保持可点 */
+    if (root.classList.contains('eighttailcat-expanded')) {
+      setIframePointerEvents(frame, true);
+      return;
+    }
+    if (Date.now() < _etcPeHoldUntil) {
+      setIframePointerEvents(frame, true);
+      return;
+    }
+    const hit = hitTestPetIframe(frame, e.clientX, e.clientY);
+    setIframePointerEvents(frame, hit);
+  }
+
+  function holdPe(e) {
+    const frame = document.getElementById(FRAME_ID) || iframe;
+    if (hitTestPetIframe(frame, e.clientX, e.clientY)) {
+      _etcPeHoldUntil = Date.now() + 800;
+      setIframePointerEvents(frame, true);
+    }
+  }
+
+  document.addEventListener('pointermove', syncPe, true);
+  document.addEventListener('pointerdown', holdPe, true);
+  document.addEventListener('touchstart', function (e) {
+    if (!e.touches || !e.touches.length) return;
+    holdPe(e.touches[0]);
+  }, true);
+  document.addEventListener('pointerup', function () {
+    _etcPeHoldUntil = 0;
+  }, true);
 }
 
 function ensureFallbackFace(overlay) {
@@ -557,6 +657,11 @@ function mountOverlay(base) {
     for (let i = 1; i < frames.length; i++) {
       try { frames[i].remove(); } catch (_) {}
     }
+    const frame0 = frames[0] || document.getElementById(FRAME_ID);
+    if (frame0) {
+      frame0.style.setProperty('pointer-events', 'none', 'important');
+      setupIframeClickThrough(frame0);
+    }
     return overlay;
   }
 
@@ -569,8 +674,8 @@ function mountOverlay(base) {
   overlay.setAttribute('aria-label', '八条猫桌宠 (移动触屏版)');
   overlay.style.touchAction = 'none';
   overlay.style.willChange = 'transform';
-  overlay.style.width = 'min(300px, 78vw)';
-  overlay.style.height = 'min(400px, 72vh)';
+  overlay.style.width = 'min(260px, 72vw)';
+  overlay.style.height = 'min(300px, 58vh)';
   overlay.style.overflow = 'visible';
   overlay.style.border = '0';
   overlay.style.background = 'transparent';
@@ -582,7 +687,7 @@ function mountOverlay(base) {
   iframe.title = '八条猫桌宠 (移动触屏版)';
   iframe.setAttribute('allowtransparency', 'true');
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:auto;overflow:visible;';
+  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:none;overflow:visible;';
   iframe.src = (base || getExtBase()) + 'index.html';
   iframe.addEventListener('load', function () {
     const face = overlay.querySelector('#' + FALLBACK_ID);
@@ -590,6 +695,7 @@ function mountOverlay(base) {
       face.style.display = 'none';
       face.style.opacity = '0';
     }
+    setupIframeClickThrough(iframe);
   });
   iframe.addEventListener('error', function () {
     const face = overlay.querySelector('#' + FALLBACK_ID);
@@ -601,6 +707,7 @@ function mountOverlay(base) {
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
   ensureOverlayOnBody(overlay);
+  setupIframeClickThrough(iframe);
 
   const s = ensureSettings();
   if (s.visible) forceShowStyles(overlay);

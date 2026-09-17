@@ -8,8 +8,9 @@
   right: auto !important;
   bottom: auto !important;
   z-index: 9999 !important;
-  width: min(300px, 78vw) !important;
-  height: min(400px, 72vh) !important;
+  /* 紧缩占位：只包住猫咪+侧钮，减少透明挡点击区域 */
+  width: min(260px, 72vw) !important;
+  height: min(300px, 58vh) !important;
   margin: 0 !important;
   padding: 0 !important;
   pointer-events: none !important;
@@ -56,8 +57,14 @@
   background: transparent !important;
   color-scheme: none;
   touch-action: none;
-  pointer-events: auto !important;
+  /* 默认穿透：由 index.js 在命中猫咪/按钮时临时开启 */
+  pointer-events: none !important;
   overflow: visible !important;
+}
+
+#eight-tail-pet-mobile-root iframe.etc-pe-on,
+#pet-container-mobile iframe.etc-pe-on {
+  pointer-events: auto !important;
 }
 
 #eight-tail-mobile-fallback,
