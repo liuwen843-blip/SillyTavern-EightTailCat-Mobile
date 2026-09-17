@@ -6,7 +6,7 @@
  */
 
 const PICA_ROOT_ID = 'picacg-main-container';
-const PICA_STYLE_ID = 'eight-tail-picacg-style-v4';
+const PICA_STYLE_ID = 'eight-tail-picacg-style-v5';
 const PICA_TOKEN_LS = 'picacg_user_token';
 const PICA_API_BASE = 'https://picaapi.picacomic.com/';
 /* 通用逆向静态密钥（开源客户端通用） */
@@ -297,7 +297,7 @@ function picaEnsureStyle() {
     style.id = PICA_STYLE_ID;
     document.head.appendChild(style);
   }
-  ['eight-tail-picacg-style-v1', 'eight-tail-picacg-style-v2', 'eight-tail-picacg-style-v3'].forEach(function (id) {
+  ['eight-tail-picacg-style-v1', 'eight-tail-picacg-style-v2', 'eight-tail-picacg-style-v3', 'eight-tail-picacg-style-v4'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -390,10 +390,22 @@ function picaEnsureStyle() {
   touch-action: manipulation !important;
   -webkit-tap-highlight-color: transparent !important;
 }
+#picacg-auth-btn,
 #pica-btn-account {
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 100030 !important;
   background: linear-gradient(135deg, #f5c542, #e6a817) !important;
   color: #2a1a00 !important;
   box-shadow: 0 2px 10px rgba(245, 197, 66, 0.35) !important;
+}
+#picacg-auth-modal {
+  pointer-events: auto !important;
+  z-index: 999999 !important;
+}
+#picacg-auth-modal * {
+  pointer-events: auto !important;
 }
 .picacg-top-bar button.primary,
 #pica-topbar button.primary,
@@ -556,7 +568,7 @@ function picaEnsureStyle() {
 function picaBuildDom() {
   picaEnsureStyle();
   let root = picaGetRoot();
-  if (root && root.dataset.picaVersion === '4' && root.id === PICA_ROOT_ID) return root;
+  if (root && root.dataset.picaVersion === '5' && root.id === PICA_ROOT_ID) return root;
   if (root) {
     try { root.remove(); } catch (_) {}
   }
@@ -569,7 +581,7 @@ function picaBuildDom() {
   });
   root = document.createElement('div');
   root.id = PICA_ROOT_ID;
-  root.dataset.picaVersion = '4';
+  root.dataset.picaVersion = '5';
   root.className = 'picacg-main-container';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'PicACG 哔咔漫画');
@@ -579,8 +591,9 @@ function picaBuildDom() {
     '  <button type="button" id="pica-btn-back" class="action-btn" title="返回" aria-label="返回">←</button>',
     '  <div class="pica-title" id="pica-heading">PicACG 哔咔</div>',
     '  <div class="picacg-top-actions">',
-    '    <button type="button" id="pica-btn-account" class="action-btn" title="登录 / Token" aria-label="登录配置"',
-    '      onclick="return window.__picaOpenLogin && window.__picaOpenLogin(event)">🔑</button>',
+    '    <button type="button" id="picacg-auth-btn" class="action-btn" title="登录 / Token" aria-label="登录配置"',
+    '      style="cursor:pointer;pointer-events:auto!important;position:relative;z-index:100030!important;"',
+    '      onclick="window.showPicacgLoginModal(event)">🔑</button>',
     '    <button type="button" id="pica-btn-close" class="action-btn primary" title="关闭" aria-label="关闭"',
     '      onclick="return window.__picaCloseApp && window.__picaCloseApp(event)">✕</button>',
     '  </div>',
@@ -623,7 +636,7 @@ function picaBuildDom() {
     '      <h4>🔑 PicACG 登录 / Token</h4>',
     '      <div class="pica-field"><span>邮箱 / 账号</span><input id="pica-email" type="text" autocomplete="username" placeholder="邮箱或用户名" /></div>',
     '      <div class="pica-field"><span>密码</span><input id="pica-password" type="password" autocomplete="current-password" placeholder="密码" /></div>',
-    '      <div class="pica-field"><span>或手动粘贴 Token</span><input id="pica-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴已有 Token" /></div>',
+    '      <div class="pica-field"><span>或手动粘贴 Token</span><input id="pica-overlay-token" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴已有 Token" /></div>',
     '      <div class="pica-actions">',
     '        <button type="button" class="primary" id="pica-btn-login">登录 / 保存</button>',
     '        <button type="button" id="pica-btn-test">测试连接</button>',
@@ -648,7 +661,7 @@ function picaEls(root) {
     root: root,
     heading: root.querySelector('#pica-heading'),
     back: root.querySelector('#pica-btn-back'),
-    account: root.querySelector('#pica-btn-account'),
+    account: root.querySelector('#picacg-auth-btn') || root.querySelector('#pica-btn-account'),
     close: root.querySelector('#pica-btn-close'),
     topbar: root.querySelector('#pica-topbar'),
     loginOverlay: root.querySelector('#pica-login-overlay'),
@@ -658,7 +671,7 @@ function picaEls(root) {
     panelReader: root.querySelector('#pica-panel-reader'),
     email: root.querySelector('#pica-email'),
     password: root.querySelector('#pica-password'),
-    tokenInput: root.querySelector('#pica-token-input'),
+    tokenInput: root.querySelector('#pica-overlay-token') || root.querySelector('#pica-token-input'),
     btnLogin: root.querySelector('#pica-btn-login'),
     btnTest: root.querySelector('#pica-btn-test'),
     btnClear: root.querySelector('#pica-btn-clear'),
@@ -1053,7 +1066,11 @@ function picaBindUi(root) {
   if (els.account) {
     els.account.addEventListener('click', function (e) {
       e.preventDefault(); stop(e);
-      picaShowLoginOverlay(true);
+      if (typeof window.showPicacgLoginModal === 'function') {
+        window.showPicacgLoginModal(e);
+      } else {
+        picaShowLoginOverlay(true);
+      }
     });
   }
   if (els.loginDismiss) {
@@ -1218,6 +1235,12 @@ export function closePicacgApp() {
     try { els.readerStream.innerHTML = ''; } catch (_) {}
   }
   picaShowLoginOverlay(false);
+  try {
+    const authModal = document.getElementById('picacg-auth-modal');
+    if (authModal) authModal.style.display = 'none';
+    const authBd = document.getElementById('picacg-auth-backdrop');
+    if (authBd) authBd.style.display = 'none';
+  } catch (_) {}
   if (root) {
     root.classList.remove('is-open');
     root.setAttribute('aria-hidden', 'true');
@@ -1243,14 +1266,102 @@ try {
   window.closePicacgApp = closePicacgApp;
   window.togglePicacgApp = togglePicacgApp;
   window.isPicacgOpen = isPicacgOpen;
-  window.__picaOpenLogin = function (e) {
+
+  window.loadPicacgHome = function () {
     try {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      picaLoadHot();
     } catch (_) {}
-    picaShowLoginOverlay(true);
+  };
+
+  window.doPicacgSignIn = async function () {
+    const modal = document.getElementById('picacg-auth-modal');
+    if (!modal) return;
+    const emailEl = modal.querySelector('#pica-email-input');
+    const pwdEl = modal.querySelector('#pica-pwd-input');
+    const email = emailEl ? emailEl.value.trim() : '';
+    const password = pwdEl ? pwdEl.value : '';
+    if (!email || !password) {
+      alert('请填写账号密码，或粘贴 Token');
+      return;
+    }
+    try {
+      await picaLogin(email, password);
+      alert('登录成功！');
+      modal.style.display = 'none';
+      const bd = document.getElementById('picacg-auth-backdrop');
+      if (bd) bd.style.display = 'none';
+      if (window.loadPicacgHome) window.loadPicacgHome();
+    } catch (err) {
+      alert('登录失败：' + (err && err.message ? err.message : err));
+    }
+  };
+
+  window.showPicacgLoginModal = function (e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    let modal = document.getElementById('picacg-auth-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'picacg-auth-modal';
+      modal.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1f1f23;padding:20px;border-radius:12px;z-index:999999;box-shadow:0 10px 40px rgba(0,0,0,0.8);border:1px solid #ff4d79;display:flex;flex-direction:column;gap:12px;min-width:280px;color:#fff;pointer-events:auto;';
+      modal.innerHTML = `
+          <h3 style="margin:0;font-size:16px;color:#ff4d79;">PicACG 账号授权</h3>
+          <input id="pica-token-input" type="text" placeholder="粘贴 Token（若有）" style="padding:8px;border-radius:6px;background:#111;color:#fff;border:1px solid #444;" />
+          <input id="pica-email-input" type="text" placeholder="哔咔账号 / 邮箱" style="padding:8px;border-radius:6px;background:#111;color:#fff;border:1px solid #444;" />
+          <input id="pica-pwd-input" type="password" placeholder="密码" style="padding:8px;border-radius:6px;background:#111;color:#fff;border:1px solid #444;" />
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+            <button id="pica-close-login" style="padding:6px 12px;background:#333;color:#ccc;border:none;border-radius:6px;cursor:pointer;">取消</button>
+            <button id="pica-submit-login" style="padding:6px 12px;background:#ff4d79;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:bold;">保存并登录</button>
+          </div>
+        `;
+      /* 遮罩层：点击空白关闭，但不拦截弹窗本身 */
+      const backdrop = document.createElement('div');
+      backdrop.id = 'picacg-auth-backdrop';
+      backdrop.style.cssText = 'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,0.55);pointer-events:auto;';
+      backdrop.addEventListener('click', function (ev) {
+        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+        modal.style.display = 'none';
+        backdrop.style.display = 'none';
+      });
+      modal.addEventListener('click', function (ev) {
+        if (ev) ev.stopPropagation();
+      });
+      document.body.appendChild(backdrop);
+      document.body.appendChild(modal);
+
+      modal.querySelector('#pica-close-login').onclick = function () {
+        modal.style.display = 'none';
+        const bd = document.getElementById('picacg-auth-backdrop');
+        if (bd) bd.style.display = 'none';
+      };
+      modal.querySelector('#pica-submit-login').onclick = function () {
+        const tokenEl = modal.querySelector('#pica-token-input');
+        const token = tokenEl ? tokenEl.value.trim() : '';
+        if (token) {
+          localStorage.setItem('picacg_user_token', token);
+          picaState.token = token;
+          alert('Token 保存成功！');
+          modal.style.display = 'none';
+          const bd = document.getElementById('picacg-auth-backdrop');
+          if (bd) bd.style.display = 'none';
+          if (window.loadPicacgHome) window.loadPicacgHome();
+        } else {
+          if (window.doPicacgSignIn) window.doPicacgSignIn();
+        }
+      };
+    }
+    modal.style.display = 'flex';
+    const backdrop = document.getElementById('picacg-auth-backdrop');
+    if (backdrop) backdrop.style.display = 'block';
+    const currentToken = localStorage.getItem('picacg_user_token') || '';
+    const tokenInput = modal.querySelector('#pica-token-input');
+    if (tokenInput) tokenInput.value = currentToken;
+  };
+
+  /* 兼容旧内联绑定 */
+  window.__picaOpenLogin = function (e) {
+    if (typeof window.showPicacgLoginModal === 'function') {
+      window.showPicacgLoginModal(e);
+    }
     return false;
   };
   window.__picaCloseApp = function (e) {
