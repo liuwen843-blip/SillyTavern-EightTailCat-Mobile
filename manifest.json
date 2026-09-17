@@ -8,8 +8,8 @@
   "js": "index.js",
   "css": "style.css",
   "author": "liuwen843-blip",
-  "version": "1.0.0-mobile",
+  "version": "1.0.1-mobile",
   "homePage": "https://github.com/liuwen843-blip",
   "auto_update": false,
-  "description": "八条猫桌宠移动触屏版：缩小贴靠右下角、支持 Touch 拖拽，设置面板为手机底部抽屉式布局，避免与 PC 版扩展冲突。"
+  "description": "八条猫桌宠移动触屏版：扩展侧边栏提供「打开面板 / 显示隐藏」入口；隐藏后仍可从侧边栏或右下角按钮重新召唤。"
 }

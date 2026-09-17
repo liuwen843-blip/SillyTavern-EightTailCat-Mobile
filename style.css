@@ -50,3 +50,33 @@
   min-height: 40px;
   touch-action: manipulation;
 }
+
+/* 隐藏桌宠后的右下角常驻召唤按钮 */
+#eighttailcat-mobile-fab {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right, 0px));
+  bottom: max(16px, env(safe-area-inset-bottom, 0px));
+  z-index: 100000;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+}
+#eighttailcat-mobile-fab.is-visible {
+  display: flex;
+}
+#eighttailcat-mobile-fab:active {
+  transform: scale(0.94);
+}
