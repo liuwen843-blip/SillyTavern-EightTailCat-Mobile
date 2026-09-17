@@ -1557,6 +1557,11 @@ function svOnAppDockClick(btn) {
   }
   if (app === 'picacg') {
     try {
+      if (typeof window.pauseMuteShortVideoPlayer === 'function') {
+        window.pauseMuteShortVideoPlayer();
+      }
+    } catch (_) {}
+    try {
       if (typeof window.openPicacgApp === 'function') {
         window.openPicacgApp();
         return;
@@ -1646,8 +1651,18 @@ function svToggleLike() {
   svUpdateChrome();
 }
 
+function svIsPicacgTarget(el) {
+  if (!el || !el.closest) return false;
+  return !!(
+    el.closest('#picacg-modal-container') ||
+    el.closest('#eight-tail-picacg-root') ||
+    el.closest('.picacg-modal-container')
+  );
+}
+
 function svIsInteractiveTarget(el) {
   if (!el || !el.closest) return false;
+  if (svIsPicacgTarget(el)) return true;
   return !!(
     el.closest('#eight-tail-sv-toolbar') ||
     el.closest('#eight-tail-sv-apps') ||
@@ -1847,6 +1862,7 @@ function svBindUi(root) {
   const stage = els.stage;
   if (stage) {
     stage.addEventListener('touchstart', function (e) {
+      if (svIsPicacgTarget(e.target)) return; // 漫画区域内的所有手势和点击，绝对不让短视频拦截
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (!e.touches || !e.touches.length) return;
       svState.moved = false;
@@ -1855,6 +1871,7 @@ function svBindUi(root) {
     }, { passive: true });
 
     stage.addEventListener('touchmove', function (e) {
+      if (svIsPicacgTarget(e.target)) return;
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       if (!e.touches || !e.touches.length) return;
@@ -1867,6 +1884,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('touchend', function (e) {
+      if (svIsPicacgTarget(e.target)) return;
       if (svIsInteractiveTarget(e.target) || svState.searchOpen) return;
       if (svState.browseOpen) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
@@ -1885,6 +1903,7 @@ function svBindUi(root) {
     }, { passive: false });
 
     stage.addEventListener('click', function (e) {
+      if (svIsPicacgTarget(e.target)) return;
       if (svIsInteractiveTarget(e.target)) return;
       if (svIsEmbedMode(svState.mode) || svState.browseOpen) return;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
@@ -1894,6 +1913,7 @@ function svBindUi(root) {
     });
 
     stage.addEventListener('wheel', function (e) {
+      if (svIsPicacgTarget(e.target)) return;
       if (!svState.open || svState.browseOpen) return;
       if (svIsInteractiveTarget(e.target)) return;
       e.preventDefault();
@@ -1903,8 +1923,20 @@ function svBindUi(root) {
   }
 
   root.addEventListener('pointerdown', function (e) {
+    if (svIsPicacgTarget(e.target)) return;
     if (svIsInteractiveTarget(e.target)) return;
     e.stopPropagation();
+  });
+  /* 根节点捕获阶段再挡一层：PicACG 打开时短视频不再吃手势 */
+  ['touchstart', 'touchmove', 'touchend'].forEach(function (evName) {
+    root.addEventListener(evName, function (e) {
+      if (svIsPicacgTarget(e.target)) return;
+      try {
+        const pica = document.getElementById('picacg-modal-container') ||
+          document.getElementById('eight-tail-picacg-root');
+        if (pica && pica.classList.contains('is-open')) return;
+      } catch (_) {}
+    }, { capture: true, passive: true });
   });
 }
 
@@ -1970,6 +2002,29 @@ export function closeShortVideoPlayer() {
   svState.open = false;
 }
 
+/** 打开漫画时：暂停并静音，不关闭媒体中心 */
+export function pauseMuteShortVideoPlayer() {
+  const els = svEls();
+  svState.muted = true;
+  if (els.video) {
+    try { els.video.pause(); } catch (_) {}
+    try { els.video.muted = true; } catch (_) {}
+  }
+  if (els.embed && els.embed.contentWindow) {
+    try {
+      els.embed.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+        '*'
+      );
+      els.embed.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'mute', args: '' }),
+        '*'
+      );
+    } catch (_) {}
+  }
+  svUpdateChrome();
+}
+
 export function toggleShortVideoPlayer() {
   if (svState.open) closeShortVideoPlayer();
   else openShortVideoPlayer();
@@ -1984,6 +2039,7 @@ try {
   window.closeShortVideoPlayer = closeShortVideoPlayer;
   window.toggleShortVideoPlayer = toggleShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
+  window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
   window.__etcPlayYoutube = svOpenYoutubeFeed;
   window.__etcPlayPornhub = function () { svOpenAdultBrowse(true); };
 } catch (_) {}

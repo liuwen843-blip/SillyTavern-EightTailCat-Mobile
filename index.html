@@ -3820,7 +3820,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="打开应用与媒体中心" aria-label="打开应用与媒体中心" data-hub-only="1">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="单击：短视频 · 双击：PicACG 漫画" aria-label="单击短视频，双击漫画" data-hub-only="1">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -3945,7 +3945,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：点 📱 打开内嵌短视频（不离开酒馆）；长按 📱 可生成今日简报。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击 📱 开关短视频；双击 📱 打开 PicACG；长按可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -12844,6 +12844,42 @@
         return false;
       }
 
+      function requestOpenPicacg() {
+        try {
+          if (window.parent && window.parent !== window && typeof window.parent.pauseMuteShortVideoPlayer === "function") {
+            window.parent.pauseMuteShortVideoPlayer();
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.pauseMuteShortVideoPlayer === "function") {
+            window.pauseMuteShortVideoPlayer();
+          }
+        } catch (_) {}
+        try {
+          if (window.parent && window.parent !== window && typeof window.parent.openPicacgApp === "function") {
+            window.parent.openPicacgApp();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.openPicacgApp === "function") {
+            window.openPicacgApp();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof notifyStHost === "function") {
+            notifyStHost({ type: "eight-tail-open-picacg" });
+            return true;
+          }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: "eight-tail-open-picacg" }, "*");
+            return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
       function openAppHubModalLocal() {
         if (IS_SETTINGS_WINDOW) return;
         try { closeGameModal(); } catch (_) {}
@@ -13651,11 +13687,14 @@
         if (!memoBtn || !memoPanel) return;
 
         const CAPSULE_LONG_MS = 800;
+        const CAPSULE_DBLCLICK_MS = 300;
         let pressAt = 0;
         let longFired = false;
         let dragMode = false;
         let moved = false;
         let holdTimer = null;
+        let clickTimer = null;
+        let clickCount = 0;
         let startX = 0;
         let startY = 0;
         let originLeft = 0;
@@ -13670,6 +13709,29 @@
             clearTimeout(holdTimer);
             holdTimer = null;
           }
+        }
+
+        function clearClickTimer() {
+          if (clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+          }
+        }
+
+        function handleCapsuleSingleClick() {
+          try { closeMemo(); } catch (_) {}
+          toggleMediaHub();
+          markActivity();
+        }
+
+        function handleCapsuleDoubleClick() {
+          try { closeMemo(); } catch (_) {}
+          if (requestOpenPicacg()) {
+            try { showToast("PicACG 漫画", 1000); } catch (_) {}
+          } else {
+            try { showToast("PicACG 未加载，请刷新扩展", 1800); } catch (_) {}
+          }
+          markActivity();
         }
 
         function openMemo() {
@@ -13765,9 +13827,20 @@
             return;
           }
           if (wasLong) return;
-          /* 短按：仅开关媒体中心，严禁任何 Scheme / 外链 */
-          try { closeMemo(); } catch (_) {}
-          toggleMediaHub();
+          /* 短按：300ms 内二次点击 = 双击开漫画；否则单击开关短视频 */
+          clickCount += 1;
+          if (clickCount >= 2) {
+            clearClickTimer();
+            clickCount = 0;
+            handleCapsuleDoubleClick();
+            return;
+          }
+          clearClickTimer();
+          clickTimer = setTimeout(function () {
+            clickTimer = null;
+            clickCount = 0;
+            handleCapsuleSingleClick();
+          }, CAPSULE_DBLCLICK_MS);
           markActivity();
         }
 
@@ -17060,6 +17133,7 @@
           el.closest("#clicker-modal") ||
           el.closest("#app-hub-modal") ||
           el.closest("#eight-tail-short-video-root") ||
+          el.closest("#picacg-modal-container") ||
           el.closest("#eight-tail-picacg-root") ||
           el.closest("#food-btn") ||
           el.closest("#feed-tray-modal") ||

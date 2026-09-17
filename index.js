@@ -5,6 +5,7 @@ import {
   closeShortVideoPlayer,
   toggleShortVideoPlayer,
   isShortVideoOpen,
+  pauseMuteShortVideoPlayer,
 } from './short-video.js';
 import {
   openPicacgApp,
@@ -447,6 +448,7 @@ function bindHostListenersOnce() {
       data.type === 'eight-tail-open-picacg' ||
       data.type === 'eighttailcat-open-picacg'
     ) {
+      try { pauseMuteShortVideoPlayer(); } catch (_) {}
       openPicacgApp();
       return;
     }
@@ -1018,6 +1020,7 @@ try {
   window.openShortVideoPlayer = openShortVideoPlayer;
   window.closeShortVideoPlayer = closeShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
+  window.pauseMuteShortVideoPlayer = pauseMuteShortVideoPlayer;
   window.openPicacgApp = openPicacgApp;
   window.closePicacgApp = closePicacgApp;
   window.togglePicacgApp = togglePicacgApp;

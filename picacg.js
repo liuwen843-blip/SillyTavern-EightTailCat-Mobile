@@ -5,8 +5,8 @@
  * - 搜索 / 热门 / 章节 / 条漫瀑布流阅读器
  */
 
-const PICA_ROOT_ID = 'eight-tail-picacg-root';
-const PICA_STYLE_ID = 'eight-tail-picacg-style-v1';
+const PICA_ROOT_ID = 'picacg-modal-container';
+const PICA_STYLE_ID = 'eight-tail-picacg-style-v2';
 const PICA_TOKEN_LS = 'picacg_user_token';
 const PICA_API_BASE = 'https://picaapi.picacomic.com/';
 /* 通用逆向静态密钥（开源客户端通用） */
@@ -232,7 +232,40 @@ function picaEsc(s) {
 }
 
 function picaGetRoot() {
-  return document.getElementById(PICA_ROOT_ID);
+  return document.getElementById(PICA_ROOT_ID) ||
+    document.getElementById('eight-tail-picacg-root');
+}
+
+function picaPauseMuteMedia() {
+  try {
+    if (typeof window.pauseMuteShortVideoPlayer === 'function') {
+      window.pauseMuteShortVideoPlayer();
+    }
+  } catch (_) {}
+  try {
+    const root = document.getElementById('eight-tail-short-video-root');
+    if (!root) return;
+    root.style.setProperty('pointer-events', 'none', 'important');
+    const video = root.querySelector('#eight-tail-sv-video');
+    if (video) {
+      try { video.pause(); } catch (_) {}
+      try { video.muted = true; } catch (_) {}
+    }
+    const embed = root.querySelector('#eight-tail-sv-embed');
+    if (embed && embed.contentWindow) {
+      try {
+        embed.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }), '*');
+        embed.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'mute', args: '' }), '*');
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+function picaRestoreMediaPointer() {
+  try {
+    const root = document.getElementById('eight-tail-short-video-root');
+    if (root) root.style.setProperty('pointer-events', 'auto', 'important');
+  } catch (_) {}
 }
 
 function picaEnsureStyle() {
@@ -243,22 +276,38 @@ function picaEnsureStyle() {
     document.head.appendChild(style);
   }
   style.textContent = `
+#picacg-modal-container,
 #eight-tail-picacg-root {
-  position: fixed !important; inset: 0 !important; z-index: 100020 !important;
-  display: none !important; flex-direction: column !important;
-  background: #120812 !important; color: #ffe8f2 !important;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100010 !important;
+  display: none !important;
+  flex-direction: column !important;
+  background: #120812 !important;
+  color: #ffe8f2 !important;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
-  pointer-events: auto !important; touch-action: manipulation !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
   box-sizing: border-box !important;
 }
-#eight-tail-picacg-root, #eight-tail-picacg-root * { box-sizing: border-box; pointer-events: auto !important; }
+#picacg-modal-container,
+#picacg-modal-container *,
+#eight-tail-picacg-root,
+#eight-tail-picacg-root * {
+  box-sizing: border-box;
+  pointer-events: auto !important;
+}
+#picacg-modal-container.is-open,
 #eight-tail-picacg-root.is-open { display: flex !important; }
 #pica-topbar {
   flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
   padding: max(10px, env(safe-area-inset-top)) 12px 10px;
   background: linear-gradient(180deg, rgba(40,8,24,.96), rgba(24,6,16,.88));
   border-bottom: 1px solid rgba(255,120,180,.22);
-  z-index: 5;
+  z-index: 100 !important;
+  position: relative !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
 }
 #pica-topbar .pica-title { flex: 1; font-size: 15px; font-weight: 800; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -387,13 +436,19 @@ function picaEnsureStyle() {
 function picaBuildDom() {
   picaEnsureStyle();
   let root = picaGetRoot();
-  if (root && root.dataset.picaVersion === '1') return root;
+  if (root && root.dataset.picaVersion === '2') return root;
   if (root) {
     try { root.remove(); } catch (_) {}
   }
+  /* 清理旧 id 节点 */
+  try {
+    const legacy = document.getElementById('eight-tail-picacg-root');
+    if (legacy) legacy.remove();
+  } catch (_) {}
   root = document.createElement('div');
   root.id = PICA_ROOT_ID;
-  root.dataset.picaVersion = '1';
+  root.dataset.picaVersion = '2';
+  root.className = 'picacg-modal-container';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'PicACG 哔咔漫画');
   root.setAttribute('aria-hidden', 'true');
@@ -808,6 +863,13 @@ function picaBindUi(root) {
     try { e.stopPropagation(); } catch (_) {}
   }
 
+  /* 冒泡阶段拦截：不挡子元素点击，只阻止冒泡到短视频层 */
+  ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup', 'click', 'wheel'].forEach(function (evName) {
+    root.addEventListener(evName, function (e) {
+      stop(e);
+    }, { passive: true });
+  });
+
   if (els.close) {
     els.close.addEventListener('click', function (e) {
       e.preventDefault(); stop(e); closePicacgApp();
@@ -945,12 +1007,15 @@ function picaBindUi(root) {
 }
 
 export async function openPicacgApp() {
+  picaPauseMuteMedia();
   const root = picaBuildDom();
   picaState.open = true;
   picaState.token = picaGetToken();
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
   root.style.setProperty('display', 'flex', 'important');
+  root.style.setProperty('z-index', '100010', 'important');
+  root.style.setProperty('pointer-events', 'auto', 'important');
 
   if (picaState.token) {
     picaSetView('browse');
@@ -974,6 +1039,7 @@ export function closePicacgApp() {
     root.setAttribute('aria-hidden', 'true');
     root.style.setProperty('display', 'none', 'important');
   }
+  picaRestoreMediaPointer();
   picaState.open = false;
   picaState.view = 'login';
 }
