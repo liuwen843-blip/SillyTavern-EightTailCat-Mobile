@@ -6,6 +6,12 @@ import {
   toggleShortVideoPlayer,
   isShortVideoOpen,
 } from './short-video.js';
+import {
+  openPicacgApp,
+  closePicacgApp,
+  togglePicacgApp,
+  isPicacgOpen,
+} from './picacg.js';
 
 /**
  * 八条猫 · 移动触屏宿主层（强制单例）
@@ -435,6 +441,20 @@ function bindHostListenersOnce() {
           } catch (_) {}
         }, 60);
       });
+      return;
+    }
+    if (
+      data.type === 'eight-tail-open-picacg' ||
+      data.type === 'eighttailcat-open-picacg'
+    ) {
+      openPicacgApp();
+      return;
+    }
+    if (
+      data.type === 'eight-tail-close-picacg' ||
+      data.type === 'eighttailcat-close-picacg'
+    ) {
+      closePicacgApp();
       return;
     }
     if (
@@ -998,6 +1018,10 @@ try {
   window.openShortVideoPlayer = openShortVideoPlayer;
   window.closeShortVideoPlayer = closeShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
+  window.openPicacgApp = openPicacgApp;
+  window.closePicacgApp = closePicacgApp;
+  window.togglePicacgApp = togglePicacgApp;
+  window.isPicacgOpen = isPicacgOpen;
 } catch (_) {}
 
 jQuery(async function () {

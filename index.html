@@ -1571,6 +1571,7 @@
     .app-hub-icon[data-app="short-video"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
     .app-hub-icon[data-app="youtube"] .app-emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
     .app-hub-icon[data-app="pornhub"] .app-emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
+    .app-hub-icon[data-app="picacg"] .app-emoji { background: linear-gradient(160deg, #ff8fb8, #e91e63); }
     .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
     .app-hub-icon[data-app="discord"] .app-emoji { background: linear-gradient(160deg, #7289da, #5865f2); }
     .app-hub-icon .app-name {
@@ -3965,7 +3966,7 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用与媒体中心</h3>
-        <p class="app-hub-sub">YouTube Shorts · 成人片源卡片点播 · 抖音/小红书唤起 App<br />桌宠 📱 只负责开关，不会跳外链</p>
+        <p class="app-hub-sub">YouTube · Pornhub · PicACG 哔咔 · 抖音/小红书<br />桌宠 📱 只负责开关，不会跳外链</p>
         <div id="app-hub-grid" aria-label="应用列表">
           <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
             <span class="app-emoji" aria-hidden="true">▶</span>
@@ -3976,6 +3977,11 @@
             <span class="app-emoji" aria-hidden="true">🔥</span>
             <span class="app-name">Pornhub</span>
             <span class="app-open-hint">卡片点播</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="picacg" data-action="open-picacg">
+            <span class="app-emoji" aria-hidden="true">📖</span>
+            <span class="app-name">PicACG</span>
+            <span class="app-open-hint">哔咔漫画</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
             data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
@@ -3996,7 +4002,7 @@
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
             referrerpolicy="strict-origin-when-cross-origin"></iframe>
-          <div id="app-hub-player-hint">点上方 YouTube / Pornhub 打开全屏流</div>
+          <div id="app-hub-player-hint">点上方 YouTube / Pornhub / PicACG 打开</div>
         </div>
       </div>
     </div>
@@ -12994,6 +13000,44 @@
           return;
         }
 
+        if (actionType === "open-picacg" || app === "picacg") {
+          function openHostPicacg() {
+            try {
+              if (window.parent && window.parent !== window && typeof window.parent.openPicacgApp === "function") {
+                window.parent.openPicacgApp();
+                try { closeAppHubModal(); } catch (_) {}
+                return true;
+              }
+            } catch (_) {}
+            try {
+              if (typeof window.openPicacgApp === "function") {
+                window.openPicacgApp();
+                try { closeAppHubModal(); } catch (_) {}
+                return true;
+              }
+            } catch (_) {}
+            try {
+              if (typeof notifyStHost === "function") {
+                notifyStHost({ type: "eight-tail-open-picacg" });
+                try { closeAppHubModal(); } catch (_) {}
+                return true;
+              }
+              if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: "eight-tail-open-picacg" }, "*");
+                try { closeAppHubModal(); } catch (_) {}
+                return true;
+              }
+            } catch (_) {}
+            return false;
+          }
+          if (openHostPicacg()) {
+            try { showToast("PicACG 哔咔", 1000); } catch (_) {}
+            return;
+          }
+          try { showToast("PicACG 模块未加载，请刷新扩展", 1800); } catch (_) {}
+          return;
+        }
+
         if (actionType === "external-app" || app === "douyin" || app === "xiaohongshu") {
           const scheme = (btn && btn.getAttribute("data-scheme")) || "";
           const murl = (btn && btn.getAttribute("data-murl")) || url || "";
@@ -17016,6 +17060,7 @@
           el.closest("#clicker-modal") ||
           el.closest("#app-hub-modal") ||
           el.closest("#eight-tail-short-video-root") ||
+          el.closest("#eight-tail-picacg-root") ||
           el.closest("#food-btn") ||
           el.closest("#feed-tray-modal") ||
           el.closest("#game-btn") ||

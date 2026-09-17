@@ -6,7 +6,7 @@
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v11';
+const SV_STYLE_ID = 'eight-tail-sv-style-v12';
 const SV_OPEN_GUARD_MS = 550;
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode';
 const SV_YT_IDX_LS_KEY = 'eight_tail_short_video_yt_idx';
@@ -545,7 +545,7 @@ function svEnsureStyle() {
   }
   ['eight-tail-sv-style', 'eight-tail-sv-style-v4', 'eight-tail-sv-style-v5',
     'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8',
-    'eight-tail-sv-style-v9', 'eight-tail-sv-style-v10'].forEach(function (id) {
+    'eight-tail-sv-style-v9', 'eight-tail-sv-style-v10', 'eight-tail-sv-style-v11'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -723,6 +723,7 @@ function svEnsureStyle() {
 .etc-sv-app .name { font-size: 10px; font-weight: 700; }
 .etc-sv-app[data-app="youtube"] .emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
 .etc-sv-app[data-app="pornhub"] .emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
+.etc-sv-app[data-app="picacg"] .emoji { background: linear-gradient(160deg, #ff8fb8, #e91e63); }
 .etc-sv-app[data-app="douyin"] .emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
 .etc-sv-app[data-app="xiaohongshu"] .emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
 .etc-sv-app.is-on { outline: 2px solid rgba(255,255,255,.9); }
@@ -851,7 +852,7 @@ function svBuildDom() {
   svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '11') {
+  if (root && root.dataset.svVersion === '12') {
     svForceRootCss(root);
     svSyncYtConfigUi(root);
     return root;
@@ -862,7 +863,7 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '11';
+  root.dataset.svVersion = '12';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
   root.setAttribute('aria-hidden', 'true');
@@ -903,6 +904,7 @@ function svBuildDom() {
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="pornhub"><span class="emoji">🔥</span><span class="name">Pornhub</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="picacg"><span class="emoji">📖</span><span class="name">PicACG</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="douyin" data-action="external" data-scheme="snssdk1128://feed" data-web="https://www.douyin.com/"><span class="emoji">🎵</span><span class="name">抖音</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="xiaohongshu" data-action="external" data-scheme="xhsdiscover://home" data-web="https://www.xiaohongshu.com/explore"><span class="emoji">📕</span><span class="name">小红书</span></button>',
     '</div>',
@@ -1551,6 +1553,19 @@ function svOnAppDockClick(btn) {
   }
   if (app === 'pornhub') {
     svOpenAdultBrowse(true);
+    return;
+  }
+  if (app === 'picacg') {
+    try {
+      if (typeof window.openPicacgApp === 'function') {
+        window.openPicacgApp();
+        return;
+      }
+    } catch (_) {}
+    try {
+      window.postMessage({ type: 'eight-tail-open-picacg' }, '*');
+    } catch (_) {}
+    svShowHint('正在打开 PicACG…', 1200);
   }
 }
 
