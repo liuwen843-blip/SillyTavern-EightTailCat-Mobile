@@ -8,7 +8,13 @@
 const PICA_ROOT_ID = 'picacg-main-container';
 const PICA_STYLE_ID = 'eight-tail-picacg-style-v5';
 const PICA_TOKEN_LS = 'picacg_user_token';
-const PICA_API_BASE = 'https://picaapi.picacomic.com/';
+/* 网页版稳定反代节点（替代官方 App 域名，缓解 Failed to fetch） */
+const TARGET_API = 'https://go2778.com';
+const PICA_API_BASE = TARGET_API.replace(/\/?$/, '/') ;
+const PICA_API_BASES = [
+  'https://go2778.com/',
+  'https://picaapi.go2778.com/',
+];
 /* 通用逆向静态密钥（开源客户端通用） */
 const PICA_API_KEY = 'C69BAF41DA5ABD1FFEDC6D2FEA56B';
 const PICA_SECRET = '~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn';
@@ -98,7 +104,43 @@ function picaEnsureCryptoJs() {
 }
 
 /**
- * 生成哔咔请求头（HMAC-SHA256）
+ * 优先通过 CORS 代理中转，规避浏览器跨域拦截
+ * @param {string} path 相对路径（可带 query）
+ * @param {string} [base] API 根地址
+ */
+function buildProxyUrl(path, base) {
+  const api = String(base || TARGET_API).replace(/\/$/, '');
+  const p = String(path || '');
+  const direct = api + (p.startsWith('/') ? p : '/' + p);
+  return 'https://corsproxy.io/?' + encodeURIComponent(direct);
+}
+
+function picaDirectUrl(path, base) {
+  const api = String(base || TARGET_API).replace(/\/$/, '');
+  const p = String(path || '');
+  return api + (p.startsWith('/') ? p : '/' + p);
+}
+
+function picaFormatError(err, context) {
+  const raw = err && err.message != null ? String(err.message) : String(err || '未知错误');
+  const prefix = context || '请求失败';
+  if (/Failed to fetch|NetworkError|Load failed|CORS|Network request failed/i.test(raw)) {
+    return prefix + '：网络/跨域被拦截（' + raw + '）。请检查 Token、代理或节点是否可用。';
+  }
+  if (/HTTP\s*\d+/i.test(raw)) {
+    return prefix + '：' + raw + '（可能是 Token 无效、节点拒绝或路径错误）';
+  }
+  if (/JSON|Unexpected token|parse|非 JSON/i.test(raw)) {
+    return prefix + '：数据解析失败（' + raw + '）';
+  }
+  if (/全部代理|全部节点/i.test(raw)) {
+    return prefix + '：' + raw;
+  }
+  return prefix + '：' + raw;
+}
+
+/**
+ * 生成哔咔请求头（HMAC-SHA256 + Token）
  * @param {string} pathOrUrl 相对路径或完整 URL
  * @param {string} method GET/POST
  * @param {string} token authorization
@@ -106,7 +148,9 @@ function picaEnsureCryptoJs() {
 async function getPicacgHeaders(pathOrUrl, method, token) {
   const m = String(method || 'GET').toUpperCase();
   let path = String(pathOrUrl || '');
-  if (path.indexOf(PICA_API_BASE) === 0) path = path.slice(PICA_API_BASE.length);
+  PICA_API_BASES.concat([PICA_API_BASE, 'https://picaapi.picacomic.com/']).forEach(function (base) {
+    if (path.indexOf(base) === 0) path = path.slice(base.length);
+  });
   path = path.replace(/^\//, '');
   /* 签名只用 path?query，不含 host */
   const pathForSign = path.split('#')[0];
@@ -114,98 +158,113 @@ async function getPicacgHeaders(pathOrUrl, method, token) {
   const nonce = picaNonce();
   const raw = (pathForSign + time + nonce + m + PICA_API_KEY).toLowerCase();
   const signature = await picaHmacSha256Hex(PICA_SECRET, raw);
+  const auth = String(
+    token || picaState.token || localStorage.getItem(PICA_TOKEN_LS) || picaGetToken() || ''
+  ).trim();
   const headers = {
     'api-key': PICA_API_KEY,
-    accept: 'application/vnd.picacomic.com.v1+json',
+    accept: 'application/json, application/vnd.picacomic.com.v1+json',
+    Accept: 'application/json, application/vnd.picacomic.com.v1+json',
+    'Content-Type': 'application/json',
     'app-channel': '2',
     'app-version': '2.2.1.3.3.4',
     'app-uuid': 'defaultUuid',
     'app-platform': 'android',
     'app-build-version': '45',
-    'User-Agent': 'okhttp/3.8.1',
     'image-quality': 'original',
     time: time,
     nonce: nonce,
     signature: signature,
-    'Content-Type': 'application/json; charset=UTF-8',
   };
-  const auth = String(token || picaState.token || picaGetToken() || '').trim();
+  /* 列表/详情等业务请求必须带鉴权 Token */
   if (auth) headers.authorization = auth;
   return headers;
+}
+
+async function picaReadResponseJson(res, via) {
+  const status = res && res.status;
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (_) {
+    throw new Error(
+      '非 JSON 响应' +
+        (via ? '（' + via + '）' : '') +
+        (status ? ' HTTP ' + status : '') +
+        (text ? '：' + String(text).slice(0, 120) : '')
+    );
+  }
+  if (!res.ok) {
+    const apiMsg =
+      (data && (data.message || data.msg || data.error)) ||
+      ('HTTP ' + status);
+    throw new Error(String(apiMsg) + (via ? ' · via ' + via : ''));
+  }
+  return data;
 }
 
 async function picaFetchJson(path, method, body) {
   const m = String(method || 'GET').toUpperCase();
   const rel = String(path || '').replace(/^\//, '');
-  const targetUrl = PICA_API_BASE + rel;
-  const headers = await getPicacgHeaders(rel, m, picaState.token || picaGetToken());
+  const token = String(localStorage.getItem(PICA_TOKEN_LS) || picaState.token || picaGetToken() || '').trim();
+  if (token) picaState.token = token;
+  const headers = await getPicacgHeaders(rel, m, token);
   const bodyStr = body != null ? JSON.stringify(body) : null;
 
-  const attempts = [
-    {
-      name: 'corsproxy',
-      run: async function () {
-        const res = await fetch('https://corsproxy.io/?' + encodeURIComponent(targetUrl), {
-          method: m,
-          headers: headers,
-          body: bodyStr,
-          credentials: 'omit',
-          cache: 'no-store',
-          mode: 'cors',
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      },
-    },
-    {
-      name: 'direct',
-      run: async function () {
-        const res = await fetch(targetUrl, {
-          method: m,
-          headers: headers,
-          body: bodyStr,
-          credentials: 'omit',
-          cache: 'no-store',
-          mode: 'cors',
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      },
-    },
-  ];
-
-  /* GET 才尝试 allorigins（无法可靠转发自定义头，仅作兜底） */
-  if (m === 'GET') {
+  const attempts = [];
+  PICA_API_BASES.forEach(function (base) {
     attempts.push({
-      name: 'allorigins',
+      name: 'corsproxy:' + base,
       run: async function () {
-        const res = await fetch(
-          'https://api.allorigins.win/raw?url=' + encodeURIComponent(targetUrl),
-          {
-            method: 'GET',
-            headers: headers,
-            credentials: 'omit',
-            cache: 'no-store',
-            mode: 'cors',
-          }
-        );
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
+        const url = buildProxyUrl(rel, base);
+        const res = await fetch(url, {
+          method: m,
+          headers: headers,
+          body: bodyStr,
+          credentials: 'omit',
+          cache: 'no-store',
+          mode: 'cors',
+        });
+        return picaReadResponseJson(res, 'corsproxy+' + base);
       },
     });
-  }
+  });
+  /* 直连兜底（部分环境可能已放行） */
+  PICA_API_BASES.forEach(function (base) {
+    attempts.push({
+      name: 'direct:' + base,
+      run: async function () {
+        const url = picaDirectUrl(rel, base);
+        const res = await fetch(url, {
+          method: m,
+          headers: headers,
+          body: bodyStr,
+          credentials: 'omit',
+          cache: 'no-store',
+          mode: 'cors',
+        });
+        return picaReadResponseJson(res, 'direct+' + base);
+      },
+    });
+  });
 
-  let lastErr = null;
+  const errors = [];
   for (let i = 0; i < attempts.length; i++) {
     try {
       const data = await attempts[i].run();
       if (data && typeof data === 'object') return data;
+      throw new Error('空响应');
     } catch (e) {
-      lastErr = e;
-      console.warn('[PicACG] 代理失败:', attempts[i].name, e);
+      const tip = (e && e.message) ? e.message : String(e);
+      errors.push(attempts[i].name + ' → ' + tip);
+      console.warn('[PicACG] 请求失败:', attempts[i].name, e);
     }
   }
-  throw lastErr || new Error('全部代理失败');
+  const summary = errors.length
+    ? ('全部节点/代理失败：' + errors.slice(0, 3).join(' | '))
+    : '全部节点/代理失败';
+  throw new Error(summary);
 }
 
 function picaFileUrl(file) {
@@ -907,13 +966,23 @@ async function picaTestConnection() {
 
 async function picaLoadHot() {
   const els = picaEls();
+  const token = String(localStorage.getItem(PICA_TOKEN_LS) || picaGetToken() || '').trim();
+  if (!token) {
+    picaSetStatus(els.browseStatus, '热门加载失败：尚未登录。请先点顶栏 🔑 保存 Token 或账号登录。');
+    picaRenderComics([]);
+    return;
+  }
   picaSetStatus(els.browseStatus, '加载热门 / 推荐…');
   try {
     let data = null;
     try {
       data = await picaFetchJson('comics?page=1&s=dd', 'GET');
-    } catch (_) {
-      data = await picaFetchJson('comics/random', 'GET');
+    } catch (firstErr) {
+      try {
+        data = await picaFetchJson('comics/random', 'GET');
+      } catch (secondErr) {
+        throw secondErr || firstErr;
+      }
     }
     const list = picaNormalizeComics(data);
     if (!list.length && data && data.data && Array.isArray(data.data.comics)) {
@@ -924,7 +993,7 @@ async function picaLoadHot() {
     picaRenderComics(picaState.comics);
     picaSetStatus(els.browseStatus, '热门 · ' + picaState.comics.length + ' 部');
   } catch (e) {
-    picaSetStatus(els.browseStatus, '加载失败：' + (e && e.message ? e.message : e));
+    picaSetStatus(els.browseStatus, picaFormatError(e, '热门加载失败'));
     picaRenderComics([]);
   }
 }
@@ -953,7 +1022,7 @@ async function picaSearch(keyword) {
       }
     }
   } catch (e) {
-    picaSetStatus(els.browseStatus, '搜索失败：' + (e && e.message ? e.message : e));
+    picaSetStatus(els.browseStatus, picaFormatError(e, '搜索失败'));
   }
 }
 
@@ -1004,7 +1073,7 @@ async function picaOpenDetail(bookId) {
     }
     picaSetStatus(els.detailStatus, picaState.eps.length ? ('共 ' + picaState.eps.length + ' 话') : '暂无章节');
   } catch (e) {
-    picaSetStatus(els.detailStatus, '详情失败：' + (e && e.message ? e.message : e));
+    picaSetStatus(els.detailStatus, picaFormatError(e, '详情加载失败'));
   }
 }
 
@@ -1071,8 +1140,8 @@ async function picaOpenReader(bookId, order, title) {
   } catch (e) {
     if (els.readerStream) {
       els.readerStream.innerHTML =
-        '<div style="padding:40px;text-align:center;opacity:.8;">加载失败：' +
-        picaEsc(e && e.message ? e.message : e) + '</div>';
+        '<div style="padding:40px;text-align:center;opacity:.8;line-height:1.5;word-break:break-word;">' +
+        picaEsc(picaFormatError(e, '章节加载失败')) + '</div>';
     }
   }
 }
@@ -1196,7 +1265,7 @@ function picaBindUi(root) {
         picaSetView('browse');
         await picaLoadHot();
       } catch (err) {
-        picaSetStatus(els.loginStatus, '失败：' + (err && err.message ? err.message : err));
+        picaSetStatus(els.loginStatus, picaFormatError(err, '登录失败'));
       }
     });
   }
@@ -1214,7 +1283,7 @@ function picaBindUi(root) {
         picaSetStatus(els.loginStatus, '连接成功 · ' + name);
         picaShowToast('测试连接成功');
       } catch (err) {
-        picaSetStatus(els.loginStatus, '测试失败：' + (err && err.message ? err.message : err));
+        picaSetStatus(els.loginStatus, picaFormatError(err, '测试连接失败'));
       }
     });
   }
@@ -1379,7 +1448,7 @@ try {
       modal.style.display = 'none';
       if (window.loadPicacgHome) window.loadPicacgHome();
     } catch (err) {
-      alert('登录失败：' + (err && err.message ? err.message : err));
+      alert(picaFormatError(err, '登录失败'));
     }
   };
 
