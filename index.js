@@ -99,17 +99,21 @@ function readOverlayPos(el) {
 function clampOverlayPos(el, left, top) {
   const w = el.offsetWidth || 280;
   const h = el.offsetHeight || 360;
-  const maxL = Math.max(0, window.innerWidth - w);
+  /* 必须用浏览器视口，禁止任何局部容器尺寸 */
+  const vw = window.innerWidth || document.documentElement.clientWidth || w;
+  const vh = window.innerHeight || document.documentElement.clientHeight || h;
+  const maxL = Math.max(0, vw - w);
   const minT = EDGE_PAD;
-  const maxT = Math.max(minT, window.innerHeight - h - EDGE_PAD);
+  const maxT = Math.max(minT, vh - h - EDGE_PAD);
   let x = Number(left);
   let y = Number(top);
   if (isNaN(x)) x = 0;
   if (isNaN(y)) y = minT;
   x = Math.min(maxL, Math.max(0, x));
   y = Math.min(maxT, Math.max(minT, y));
-  return { left: x, top: y, w, h };
+  return { left: x, top: y, w: w, h: h };
 }
+
 
 /** 使用 translate3d 定位，拖拽时强制无 transition，保证跟手 */
 function setOverlayPos(el, left, top) {
@@ -196,30 +200,50 @@ function setPetVisible(visible, opts) {
 }
 
 function pointFromMessage(data) {
+  /* 优先 screenX/Y：跨 iframe 时 clientX 只相对 iframe，screen 差值才能稳定映射到宿主视口 */
+  const sx = data.screenX != null ? Number(data.screenX) : NaN;
+  const sy = data.screenY != null ? Number(data.screenY) : NaN;
+  if (!isNaN(sx) && !isNaN(sy)) return { x: sx, y: sy };
   const cx = data.clientX != null ? Number(data.clientX) : NaN;
   const cy = data.clientY != null ? Number(data.clientY) : NaN;
   if (!isNaN(cx) && !isNaN(cy)) return { x: cx, y: cy };
-  return {
-    x: Number(data.screenX) || 0,
-    y: Number(data.screenY) || 0,
-  };
+  return { x: 0, y: 0 };
+}
+
+
+/** 强制桌宠容器挂在 document.body，脱离酒馆 overflow:hidden 父级 */
+function ensureOverlayOnBody(el) {
+  if (!el) return el;
+  try {
+    if (el.parentElement !== document.body) {
+      document.body.appendChild(el);
+    }
+  } catch (_) {}
+  try {
+    el.style.setProperty('position', 'fixed', 'important');
+    el.style.setProperty('z-index', '9999', 'important');
+    el.style.setProperty('left', '0px', 'important');
+    el.style.setProperty('top', '0px', 'important');
+    el.style.setProperty('right', 'auto', 'important');
+    el.style.setProperty('bottom', 'auto', 'important');
+    el.style.setProperty('overflow', 'visible', 'important');
+    el.style.setProperty('pointer-events', 'auto', 'important');
+    el.style.setProperty('transition', 'none', 'important');
+  } catch (_) {}
+  return el;
 }
 
 function mountOverlay(base) {
   let overlay = document.getElementById(OVERLAY_ID);
   if (overlay) {
-    if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
-    return overlay;
+    return ensureOverlayOnBody(overlay);
   }
 
   overlay = document.createElement('div');
   overlay.id = OVERLAY_ID;
   overlay.setAttribute('aria-label', '八条猫桌宠 (移动触屏版)');
-  overlay.style.position = 'fixed';
-  overlay.style.zIndex = '9999';
   overlay.style.touchAction = 'none';
   overlay.style.willChange = 'transform';
-  overlay.style.transition = 'none';
 
   const iframe = document.createElement('iframe');
   iframe.id = FRAME_ID;
@@ -229,6 +253,7 @@ function mountOverlay(base) {
   iframe.src = (base || getExtBase()) + 'index.html';
   overlay.appendChild(iframe);
   document.body.appendChild(overlay);
+  ensureOverlayOnBody(overlay);
 
   const s = ensureSettings();
   overlay.classList.toggle('eighttailcat-hidden', !s.visible);
@@ -245,6 +270,7 @@ function mountOverlay(base) {
     const data = ev && ev.data;
     if (!data || typeof data !== 'object') return;
     if (data.type === 'eighttailcat-drag-start') {
+      ensureOverlayOnBody(overlay);
       dragging = true;
       overlay.classList.add('is-dragging');
       overlay.style.transition = 'none';
@@ -562,15 +588,28 @@ function syncDock() {
 jQuery(async function () {
   ensureSettings();
   writeVisibleToLocal(!!ensureSettings().visible);
-  mountOverlay(getExtBase());
+  const overlay0 = mountOverlay(getExtBase());
+  ensureOverlayOnBody(overlay0);
   ensureDock();
   scheduleSettingsInjection();
+
+  /* 防止酒馆 DOM 重排把浮层塞回 overflow:hidden 容器 */
+  try {
+    setInterval(function () {
+      const el = document.getElementById(OVERLAY_ID);
+      if (el) ensureOverlayOnBody(el);
+      const dock = document.getElementById(DOCK_ID);
+      if (dock && dock.parentElement !== document.body) {
+        try { document.body.appendChild(dock); } catch (_) {}
+      }
+    }, 2000);
+  } catch (_) {}
 
   try {
     if (eventSource && event_types && event_types.APP_READY) {
       eventSource.on(event_types.APP_READY, function () {
         const overlay = document.getElementById(OVERLAY_ID);
-        if (overlay && overlay.parentNode !== document.body) document.body.appendChild(overlay);
+        ensureOverlayOnBody(overlay || mountOverlay(getExtBase()));
         injectSettingsDrawer().catch(function () {});
         ensureDock();
         syncDock();

@@ -1,20 +1,27 @@
-/* 酒馆宿主层（移动触屏版）：全屏 fixed 浮层 + translate3d 拖拽 */
+/* 酒馆宿主层（移动触屏版）：强制 fixed 挂到 body，全视口可拖 */
 #pet-container-mobile {
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 9999;
-  width: min(280px, 72vw);
-  height: min(360px, 55vh);
+  position: fixed !important;
+  left: 0 !important;
+  top: 0 !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 9999 !important;
+  /* 只给猫咪本体区域尺寸，禁止 100vw/100vh 透明遮罩挡点击 */
+  width: min(280px, 72vw) !important;
+  height: min(360px, 55vh) !important;
+  margin: 0 !important;
+  padding: 0 !important;
   pointer-events: auto;
-  background: transparent;
-  border: 0;
-  overflow: visible;
+  background: transparent !important;
+  border: 0 !important;
+  overflow: visible !important;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
   will-change: transform;
   transition: none !important;
+  /* 防止被酒馆父级 transform/filter 影响 fixed 基准 */
+  transform: translate3d(0, 0, 0);
 }
 
 #pet-container-mobile.is-dragging {
@@ -23,8 +30,8 @@
 }
 
 #pet-container-mobile.eighttailcat-expanded {
-  width: min(96vw, 520px);
-  height: min(80vh, 720px);
+  width: min(96vw, 520px) !important;
+  height: min(80vh, 720px) !important;
 }
 
 #pet-container-mobile.eighttailcat-hidden {
@@ -36,7 +43,7 @@
   width: 100%;
   height: 100%;
   border: 0;
-  background: transparent;
+  background: transparent !important;
   color-scheme: none;
   touch-action: none;
   pointer-events: auto;
@@ -60,12 +67,12 @@
   touch-action: manipulation;
 }
 
-/* 右缘贴边猫爪悬浮球：42×42 触屏标准、可上下拖、半圆拟态 */
+/* 右缘贴边猫爪悬浮球 */
 #eighttailcat-mobile-dock {
-  position: fixed;
-  right: 0;
+  position: fixed !important;
+  right: 0 !important;
   top: 50%;
-  z-index: 100001;
+  z-index: 100001 !important;
   width: 42px;
   height: 42px;
   margin: 0;
@@ -102,9 +109,6 @@
 #eighttailcat-mobile-dock.is-collapsed {
   opacity: 0.95;
   background: rgba(91, 141, 239, 0.82);
-  box-shadow:
-    -3px 2px 12px rgba(91, 141, 239, 0.35),
-    inset 1px 0 0 rgba(255, 255, 255, 0.18);
 }
 
 #eighttailcat-mobile-dock.is-dragging {
@@ -113,11 +117,6 @@
   transition: none !important;
 }
 
-#eighttailcat-mobile-dock:active {
-  opacity: 1;
-}
-
-/* 兼容旧 FAB id（若残留则隐藏） */
 #eighttailcat-mobile-fab {
   display: none !important;
 }

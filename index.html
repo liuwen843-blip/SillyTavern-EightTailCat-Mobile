@@ -29,10 +29,16 @@
   <script>
     (function () {
       try {
-        if (window.parent && window.parent !== window && window.parent.SillyTavern) {
+        /* 只要嵌在 iframe 里就走宿主全屏拖拽，不依赖 SillyTavern 全局是否已挂好 */
+        var embedded = false;
+        try { embedded = !!(window.parent && window.parent !== window); } catch (__e) { embedded = true; }
+        if (embedded) {
           window.__PET_ST_MODE__ = true;
-          window.SillyTavern = window.parent.SillyTavern;
+          window.__PET_EMBEDDED__ = true;
           document.documentElement.classList.add("st-extension-host");
+          try {
+            if (window.parent.SillyTavern) window.SillyTavern = window.parent.SillyTavern;
+          } catch (__e2) {}
         }
       } catch (_) {}
       /* 动态扩展根路径：禁止写死 ./cat1.png，保证 Termux / 第三方扩展目录均可加载资源 */
@@ -203,7 +209,7 @@
     #pet {
       position: absolute;
       left: 50%;
-      top: 58%;
+      top: 50%;
       width: min(238px, 78%);
       transform: translate(-50%, -50%);
       z-index: 10;
@@ -212,14 +218,25 @@
       overflow: visible;
       will-change: left, top, transform;
     }
+    /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #pet-container-mobile 承担 */
+    html.st-extension-host #pet {
+      left: 50% !important;
+      top: 50% !important;
+      position: absolute !important;
+    }
+    html.st-extension-host #stage,
+    html.st-extension-host html,
+    html.st-extension-host body {
+      overflow: visible !important;
+    }
     #pet.dragging {
       transition: none !important;
       animation: none !important;
       will-change: left, top, transform;
     }
     html.st-extension-host #pet {
-      left: 50%;
-      top: 55%;
+      left: 50% !important;
+      top: 50% !important;
       width: min(238px, 82%);
     }
     html.st-extension-host,
@@ -351,7 +368,8 @@
       animation: none !important;
     }
 
-    #pet.biting #cat-wrap {
+    #pet.biting #cat-wrap,
+    #pet.moving-wiggle #cat-wrap {
       animation: struggleShake 0.14s ease-in-out infinite;
       transform-origin: 50% 18%;
     }
@@ -16211,7 +16229,7 @@
       }
 
       function trackFoodShakeGesture(clientX, clientY) {
-        if (IS_SETTINGS_WINDOW || state !== BITING) return;
+        if (IS_SETTINGS_WINDOW || !pet.classList.contains("moving-wiggle")) return;
         const now = performance.now();
         if (lastMoveT) {
           const dt = Math.max(8, now - lastMoveT);
@@ -16264,7 +16282,7 @@
         lastMoveT = now;
         if (!shakeDecayId) {
           const decay = function () {
-            if (state !== BITING) {
+            if (!pet.classList.contains("moving-wiggle")) {
               shakeDecayId = null;
               return;
             }
@@ -16282,8 +16300,13 @@
         }
       }
 
+      function isEmbeddedHost() {
+        if (window.__PET_EMBEDDED__ || window.__PET_ST_MODE__) return true;
+        try { return !!(window.parent && window.parent !== window); } catch (_) { return true; }
+      }
+
       function notifyStHost(payload) {
-        if (!window.__PET_ST_MODE__) return;
+        if (!isEmbeddedHost()) return;
         try {
           if (window.parent && window.parent !== window) {
             window.parent.postMessage(payload, "*");
@@ -16322,46 +16345,85 @@
         return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
       }
 
+      /* 手机版废除「咬住光标并吸附跟随」；enterBite 仅作兼容转发 */
       function enterBite(x, y) {
-        state = BITING;
-        dragging = false;
-        pet.classList.remove("floating", "dragging", "daydream");
-        pet.classList.add("biting");
+        pokePetReaction(x, y);
+      }
+
+      /** 单击戳弄：冒泡/叫声/表情，绝不吸附到手指，也不进入 BITING 捕获态 */
+      function pokePetReaction(x, y) {
+        if (state === THROWING) return;
+        if (state === BITING) forceExitBiteCapture();
+        markActivity();
+        triggerClickedVisual();
+        playMeow();
+        store = loadStore();
+        if (shouldUseOfflineFirst({})) {
+          showBubble(fallbackLine(getPokeLines()), { favoritable: true, duration: 2800, voice: false });
+        } else if (llmReady(store)) {
+          showBubble("…", { favoritable: false, duration: 0, voice: false });
+          speak(POKE_USER_PROMPT, getPokeLines(), {
+            allowBusyStates: true,
+            force: true,
+            duration: 2800
+          });
+        } else {
+          showBubble(fallbackLine(getPokeLines()), { favoritable: true, duration: 2800, voice: false });
+        }
+        reportHitRect();
+      }
+
+      /** 真正拖拽时：仅挂晃动/张嘴动画，不跟随吸附、不隐藏光标 */
+      function startDragWiggle() {
+        pet.classList.add("dragging", "moving-wiggle", "biting");
+        pet.classList.remove("floating", "daydream");
+        body.classList.remove("hiding-cursor");
         store = loadStore();
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
           triggerClickedVisual();
-        } else {
+        } else if (cat) {
           cat.src = CAT_IMG_BITE;
         }
-        body.classList.add("hiding-cursor");
-        biteClicks = 1;
-        clearTimeout(biteClickTimer);
-        biteClickTimer = setTimeout(function () { biteClicks = 0; }, BITE_CLICK_WINDOW);
-        lastMoveX = x;
-        lastMoveY = y;
-        lastMoveT = performance.now();
+        lastMoveT = 0;
         foodShakeSamples = [];
         foodShakeReversals = 0;
         foodShakeLastDirX = 0;
         foodShakeLastDirY = 0;
-        setShakeAmp(0);
-        playMeow();
-        if (shouldUseOfflineFirst({})) {
-          /* 省 Token：直接本地冒泡，不显示加载中 */
-        } else if (llmReady(store)) {
-          showBubble("…", { favoritable: false, duration: 0, voice: false });
-        } else {
-          showBubble(fallbackLine(getPokeLines()), { favoritable: true, duration: 0, voice: false });
+        setShakeAmp(0.35);
+      }
+
+      function stopDragWiggle() {
+        clearShakeAmp();
+        pet.classList.remove("dragging", "moving-wiggle", "biting");
+        body.classList.remove("hiding-cursor");
+        store = loadStore();
+        if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
+          try { resolveVisualAfterTemp(); } catch (_) {}
+        } else if (cat) {
+          cat.src = CAT_IMG_IDLE;
         }
-        placeAt(x, y, true);
-        if (window.bridge && window.bridge.setPetBusy) window.bridge.setPetBusy(true);
+        if (state === IDLE) pet.classList.add("floating");
         reportHitRect();
-        markActivity();
-        speak(POKE_USER_PROMPT, getPokeLines(), {
-          allowBusyStates: true,
-          force: true,
-          duration: 0
-        });
+      }
+
+      /** 清除可能残留的咬住吸附态（兼容旧会话 / 异常中断） */
+      function forceExitBiteCapture() {
+        state = IDLE;
+        biteClicks = 0;
+        clearTimeout(biteClickTimer);
+        clearShakeAmp();
+        pet.classList.remove("biting", "throwing", "dragging", "moving-wiggle", "dizzy");
+        body.classList.remove("hiding-cursor");
+        store = loadStore();
+        if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
+          try { resolveVisualAfterTemp(); } catch (_) {}
+        } else if (cat) {
+          cat.src = CAT_IMG_IDLE;
+        }
+        if (window.bridge && window.bridge.setPetBusy) {
+          try { window.bridge.setPetBusy(false); } catch (_) {}
+        }
+        pet.classList.add("floating");
       }
 
       function resetIdle(afterThrow) {
@@ -16369,7 +16431,7 @@
         biteClicks = 0;
         clearTimeout(biteClickTimer);
         clearShakeAmp();
-        pet.classList.remove("biting", "throwing", "dragging", "dizzy");
+        pet.classList.remove("biting", "throwing", "dragging", "moving-wiggle", "dizzy");
         clearTimeout(foodDizzyTimer);
         store = loadStore();
         if (store.appearanceMode === "gif" || store.appearanceMode === "video" || store.appearanceMode === "static") {
@@ -16479,7 +16541,15 @@
 
       function isUiChromeTarget(el) {
         if (!el || !el.closest) return false;
+        /* 任意侧边/面板按钮：不进入拖拽，避免 preventDefault 吞掉点击 */
         return !!(
+          el.closest("button") ||
+          el.closest("a") ||
+          el.closest("input") ||
+          el.closest("textarea") ||
+          el.closest("select") ||
+          el.closest(".action-btn") ||
+          el.closest(".app-hub-btn") ||
           el.closest("#fav-star") ||
           el.closest("#chat-spark") ||
           el.closest("#memo-btn") ||
@@ -16492,10 +16562,11 @@
           el.closest("#game-btn") ||
           el.closest("#btn-pet-quit") ||
           el.closest("#food-reel") ||
-          el.closest("#memo-panel") ||
           el.closest("#chat-panel") ||
           el.closest("#game-modal") ||
-          el.closest("#bubble")
+          el.closest("#bubble") ||
+          el.closest("#settings") ||
+          el.closest(".mobile-fullscreen-view")
         );
       }
 
@@ -16622,18 +16693,13 @@
 
       function handlePetSingleTap(point) {
         if (state === THROWING) return;
-        if (state === BITING) {
-          playMeow();
-          registerBiteClick();
-          return;
-        }
-        markActivity();
-        triggerClickedVisual();
-        enterBite(point.x, point.y);
+        /* 不再进入咬住吸附；单击只做戳弄反馈 */
+        pokePetReaction(point && point.x, point && point.y);
       }
 
       function handlePetDoubleTap() {
-        if (state === BITING || state === THROWING) return;
+        if (state === THROWING) return;
+        if (state === BITING) forceExitBiteCapture();
         try { openSettings(); } catch (_) {}
         try { markActivity(); } catch (_) {}
       }
@@ -16696,7 +16762,7 @@
         };
       }
 
-      function beginPetDrag(e, point) {
+      function beginPetDrag      function beginPetDrag(e, point) {
         if (state === THROWING) return false;
         if (isUiChromeTarget(e.target)) return false;
         petGestureActive = true;
@@ -16715,11 +16781,7 @@
 
       function movePetDrag(point) {
         if (!petGestureActive) return;
-        if (state === BITING) {
-          if (!window.__PET_ST_MODE__) placeAt(point.x, point.y, true);
-          updateShakeFromSpeed(point.x, point.y);
-          return;
-        }
+        /* 已废除 BITING 吸附跟随：拖拽只移动位置 + 晃动动画 */
         const dx = Math.abs(point.x - touchStartX);
         const dy = Math.abs(point.y - touchStartY);
         if (!touchMoved && (dx > 8 || dy > 8)) {
@@ -16731,13 +16793,11 @@
             clickTimer = null;
             awaitingSecondClick = false;
           }
-          pet.classList.add("dragging");
-          pet.classList.remove("floating");
           pet.style.transition = "none";
           pet.style.animation = "none";
           markActivity();
-          triggerClickedVisual();
-          if (window.__PET_ST_MODE__) {
+          startDragWiggle();
+          if (isEmbeddedHost()) {
             notifyStHost({
               type: "eighttailcat-drag-start",
               clientX: point.x,
@@ -16749,8 +16809,9 @@
             placeAt(originX, originY, false);
           }
         }
-        if (!dragging || state !== IDLE) return;
-        if (window.__PET_ST_MODE__) {
+        if (!dragging) return;
+        updateShakeFromSpeed(point.x, point.y);
+        if (isEmbeddedHost()) {
           hostDragPoint = point;
           if (!hostDragRaf) hostDragRaf = requestAnimationFrame(flushHostDrag);
           return;
@@ -16770,20 +16831,13 @@
           hostDragRaf = 0;
           flushHostDrag();
         }
-        if (state === BITING) {
-          dragging = false;
-          dragMoved = false;
-          touchMoved = false;
-          return;
-        }
         if (wasSlide) {
-          if (window.__PET_ST_MODE__) {
+          if (isEmbeddedHost()) {
             notifyStHost({ type: "eighttailcat-drag-end" });
           }
-          pet.classList.remove("dragging");
-          pet.classList.add("floating");
+          stopDragWiggle();
           pet.style.animation = "";
-          hideBubble();
+          try { hideBubble(); } catch (_) {}
           dragging = false;
           dragMoved = false;
           touchMoved = false;
@@ -16800,31 +16854,29 @@
 
       pet.addEventListener("touchstart", function (e) {
         if (!e.touches || !e.touches.length) return;
+        /* 小按钮 / UI 控件：完全放行，不 preventDefault、不启动拖拽 */
         if (isUiChromeTarget(e.target)) return;
         const point = eventPoint(e);
-        if (state === BITING) {
-          petGestureActive = true;
-          e.preventDefault();
-          return;
-        }
+        if (state === BITING) forceExitBiteCapture();
+        if (state === THROWING) return;
         if (!beginPetDrag(e, point)) return;
         e.preventDefault();
       }, { passive: false });
 
       pet.addEventListener("touchmove", function (e) {
-        if (!petGestureActive && state !== BITING) return;
+        if (!petGestureActive) return;
         e.preventDefault();
         movePetDrag(eventPoint(e));
       }, { passive: false });
 
       pet.addEventListener("touchend", function (e) {
-        if (!petGestureActive && state !== BITING) return;
+        if (!petGestureActive) return;
         e.preventDefault();
         endPetDrag(eventPoint(e), null);
       }, { passive: false });
 
       pet.addEventListener("touchcancel", function (e) {
-        e.preventDefault();
+        if (!petGestureActive) return;
         endPetDrag(eventPoint(e), null);
       }, { passive: false });
 
@@ -16833,61 +16885,31 @@
         if (state === THROWING) return;
         if (e.button === 2) return;
         if (isUiChromeTarget(e.target)) return;
+        if (state === BITING) forceExitBiteCapture();
         e.preventDefault();
         const point = eventPoint(e);
-        if (state === BITING) {
-          petGestureActive = true;
-          playMeow();
-          registerBiteClick();
-          return;
-        }
         if (!beginPetDrag(e, point)) return;
         try { pet.setPointerCapture(e.pointerId); } catch (_) {}
       });
 
       pet.addEventListener("pointermove", function (e) {
         if (e.pointerType === "touch") return;
+        if (!petGestureActive) return;
         movePetDrag(eventPoint(e));
       });
 
       function endPointer(e) {
         if (e && e.pointerType === "touch") return;
+        if (!petGestureActive && !dragging) return;
         endPetDrag(eventPoint(e || {}), e && e.pointerId);
       }
 
       pet.addEventListener("pointerup", endPointer);
       pet.addEventListener("pointercancel", endPointer);
 
-      window.addEventListener("pointermove", function (e) {
-        if (e.pointerType === "touch") return;
-        if (state !== BITING) return;
-        if (!window.__PET_ST_MODE__) placeAt(e.clientX, e.clientY, true);
-        updateShakeFromSpeed(e.clientX, e.clientY);
-      });
-
-      window.addEventListener("touchmove", function (e) {
-        if (state !== BITING) return;
-        if (!e.touches || !e.touches.length) return;
-        e.preventDefault();
-        const p = eventPoint(e);
-        if (!window.__PET_ST_MODE__) placeAt(p.x, p.y, true);
-        updateShakeFromSpeed(p.x, p.y);
-      }, { passive: false });
-
-      window.addEventListener("pointerdown", function (e) {
-        if (e.pointerType === "touch") return;
-        if (state !== BITING) return;
-        if (pet.contains(e.target)) return;
-        registerBiteClick();
-        markActivity();
-      });
-
-      window.addEventListener("touchstart", function (e) {
-        if (state !== BITING) return;
-        if (pet.contains(e.target)) return;
-        registerBiteClick();
-        markActivity();
-      }, { passive: true });
+      /* 启动时清掉可能残留的咬住吸附 / 藏光标，防止挡点击 */
+      try { forceExitBiteCapture(); } catch (_) {}
+      try { body.classList.remove("hiding-cursor"); } catch (_) {}
 
       /* Esc：关闭设置（网页弹窗或 Qt 设置子窗）；猫窗无设置时 Esc 仍由 Python 处理退出 */
       window.addEventListener("keydown", function (e) {
