@@ -1,16 +1,17 @@
 /**
- * 酒馆宿主层 · 沉浸式短视频流媒体中心 v9
- * - YouTube：精选公开 Shorts 单视频列表，一键切换
+ * 酒馆宿主层 · 沉浸式短视频流媒体中心 v11
+ * - YouTube：官方 Data API（可选 Key）/ Invidious 镜像搜索 → 真实 videoId 轮播
  * - 成人源：三重 CORS 代理 + Eporner/PH 官方接口，卡片列表点播
  * - 无 B站；关闭立刻清空 iframe，杜绝漏声
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v10';
+const SV_STYLE_ID = 'eight-tail-sv-style-v11';
 const SV_OPEN_GUARD_MS = 550;
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode';
 const SV_YT_IDX_LS_KEY = 'eight_tail_short_video_yt_idx';
 const SV_SEARCH_LS_KEY = 'eight_tail_short_video_recent_search';
+const SV_YT_API_KEY_LS = 'eight_tail_yt_api_key';
 const SV_SWIPE_PX = 48;
 
 const SV_QUICK_TAGS = [
@@ -34,6 +35,9 @@ const SV_YT_SHORTS = [
   { id: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody' },
   { id: 'OPf0YbXqDm0', title: 'Uptown Funk' },
   { id: 'RgKAFK5djSk', title: 'See You Again' },
+  { id: 'e-ORhEE9VVg', title: 'Blank Space' },
+  { id: 'JGwWNGJdvx8', title: 'Shape of You' },
+  { id: '2Vv-BfVoq4g', title: 'Perfect' },
 ];
 
 const SV_EPORNER_API =
@@ -121,11 +125,16 @@ let svState = {
   embedId: '',
   ignoreClicksUntil: 0,
   ytIndex: 0,
+  ytPlaylist: null, /* null=预置 Shorts；数组=搜索结果 [{id,title}] */
+  ytSearchKw: '',
+  ytSearching: false,
+  ytUsedOfficial: false,
   adultList: [],
   adultIndex: 0,
   adultLoading: false,
   browseOpen: false,
   searchOpen: false,
+  ytConfigOpen: false,
   lastSearchKw: '',
 };
 
@@ -182,21 +191,194 @@ function svGetPageOrigin() {
   return 'http://127.0.0.1';
 }
 
-/** YouTube 官方 Embed Search 流（免 API Key） */
-function svYoutubeSearchEmbedUrl(keyword) {
-  const kw = String(keyword || '').trim();
-  const currentOrigin = svGetPageOrigin();
-  return 'https://www.youtube-nocookie.com/embed?listType=search&list=' +
-    encodeURIComponent(kw) +
-    '&autoplay=1&playsinline=1&enablejsapi=1&rel=0&origin=' +
-    encodeURIComponent(currentOrigin);
-}
-
 function svFormatDuration(sec) {
   const n = Math.max(0, Math.floor(Number(sec) || 0));
   const m = Math.floor(n / 60);
   const s = n % 60;
   return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function svYtActiveList() {
+  if (svState.ytPlaylist && svState.ytPlaylist.length) return svState.ytPlaylist;
+  return SV_YT_SHORTS;
+}
+
+function svGetYtApiKey() {
+  try {
+    return String(localStorage.getItem(SV_YT_API_KEY_LS) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function svSaveYtApiKey(raw) {
+  const key = String(raw || '').trim();
+  if (!key) return false;
+  try {
+    localStorage.setItem(SV_YT_API_KEY_LS, key);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function svClearYtApiKey() {
+  try { localStorage.removeItem(SV_YT_API_KEY_LS); } catch (_) {}
+}
+
+function svUpdateYtSearchHint() {
+  const els = svEls();
+  if (!els.searchHint) return;
+  if (svGetYtApiKey()) {
+    els.searchHint.textContent = 'YouTube：官方 API 已加速 · Pornhub：卡片列表';
+  } else {
+    els.searchHint.textContent = 'YouTube：公共镜像（可配 API Key 加速）· Pornhub：卡片列表';
+  }
+}
+
+function svSyncYtConfigUi(root) {
+  const els = svEls(root);
+  if (els.ytKeyInput) {
+    try { els.ytKeyInput.value = svGetYtApiKey(); } catch (_) {}
+  }
+  svUpdateYtSearchHint();
+}
+
+function svFetchWithTimeout(url, ms) {
+  const timeoutMs = ms || 6000;
+  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  let timer = null;
+  const opts = {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+    mode: 'cors',
+  };
+  if (ctrl) {
+    opts.signal = ctrl.signal;
+    timer = setTimeout(function () {
+      try { ctrl.abort(); } catch (_) {}
+    }, timeoutMs);
+  }
+  return fetch(url, opts).finally(function () {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+/**
+ * 官方 YouTube Data API v3（需用户自备 Key）
+ * 返回 [{id,title}] 或 null
+ */
+async function svSearchYouTubeOfficial(keyword, apiKey) {
+  const kw = String(keyword || '').trim();
+  const key = String(apiKey || '').trim();
+  if (!kw || !key) return null;
+
+  const apiUrl =
+    'https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=15&q=' +
+    encodeURIComponent(kw) + '&key=' + encodeURIComponent(key);
+
+  try {
+    const res = await svFetchWithTimeout(apiUrl, 8000);
+    if (!res.ok) {
+      console.warn('[EightTailCat] YouTube 官方 API HTTP', res.status);
+      return null;
+    }
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    const out = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] || {};
+      const id = String((it.id && it.id.videoId) || '').trim();
+      if (!id || seen[id]) continue;
+      seen[id] = 1;
+      const title = String((it.snippet && it.snippet.title) || ('视频 ' + id)).slice(0, 80);
+      out.push({ id: id, title: title });
+    }
+    return out.length ? out : null;
+  } catch (e) {
+    console.warn('[EightTailCat] YouTube 官方 API 失败', e);
+    return null;
+  }
+}
+
+/**
+ * Invidious 开放搜索（免 API Key）
+ * 经 allorigins / corsproxy 穿透，返回 [{id,title}]
+ */
+async function svSearchYouTubeVideos(keyword) {
+  const kw = String(keyword || '').trim();
+  if (!kw) return null;
+
+  /* 有 Key → 优先官方极速接口 */
+  const ytApiKey = svGetYtApiKey();
+  svState.ytUsedOfficial = false;
+  if (ytApiKey) {
+    const official = await svSearchYouTubeOfficial(kw, ytApiKey);
+    if (official && official.length) {
+      svState.ytUsedOfficial = true;
+      return official;
+    }
+    console.warn('[EightTailCat] 官方 API 无结果，回退公共镜像');
+  }
+
+  const invEndpoints = [
+    'https://inv.tux.pizza/api/v1/search?q=' + encodeURIComponent(kw) + '&type=video',
+    'https://vid.puffyan.us/api/v1/search?q=' + encodeURIComponent(kw) + '&type=video',
+    'https://invidious.fdn.fr/api/v1/search?q=' + encodeURIComponent(kw) + '&type=video',
+  ];
+
+  const proxied = [];
+  for (let i = 0; i < invEndpoints.length; i++) {
+    const target = invEndpoints[i];
+    proxied.push('https://api.allorigins.win/get?url=' + encodeURIComponent(target));
+    proxied.push('https://corsproxy.io/?' + encodeURIComponent(target));
+    proxied.push('https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(target));
+  }
+
+  function normalizeList(data) {
+    let arr = data;
+    if (!Array.isArray(arr) && data && Array.isArray(data.contents)) {
+      try { arr = JSON.parse(data.contents); } catch (_) { arr = null; }
+    }
+    if (!Array.isArray(arr)) return [];
+    const out = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < arr.length; i++) {
+      const item = arr[i] || {};
+      const type = String(item.type || item.videoType || 'video').toLowerCase();
+      if (type && type !== 'video' && type !== 'shortvideo') continue;
+      const id = String(item.videoId || item.videoID || item.id || '').trim();
+      if (!id || id.length < 8 || seen[id]) continue;
+      seen[id] = 1;
+      out.push({
+        id: id,
+        title: String(item.title || item.videoTitle || ('视频 ' + id)).slice(0, 80),
+      });
+    }
+    return out;
+  }
+
+  for (let i = 0; i < proxied.length; i++) {
+    const url = proxied[i];
+    try {
+      const res = await svFetchWithTimeout(url, 6500);
+      if (!res.ok) continue;
+      const raw = await res.json();
+      let data = raw;
+      if (url.indexOf('allorigins') >= 0) {
+        if (raw && typeof raw.contents === 'string') {
+          try { data = JSON.parse(raw.contents); } catch (_) { continue; }
+        }
+      }
+      const list = normalizeList(data);
+      if (list.length) return list;
+    } catch (e) {
+      console.warn('[EightTailCat] YouTube 镜像搜索失败，尝试下一节点', e);
+    }
+  }
+  return null;
 }
 
 /* —— 三重代理穿透 —— */
@@ -363,7 +545,7 @@ function svEnsureStyle() {
   }
   ['eight-tail-sv-style', 'eight-tail-sv-style-v4', 'eight-tail-sv-style-v5',
     'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8',
-    'eight-tail-sv-style-v9'].forEach(function (id) {
+    'eight-tail-sv-style-v9', 'eight-tail-sv-style-v10'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -388,6 +570,7 @@ function svEnsureStyle() {
   background: linear-gradient(180deg, rgba(0,0,0,.55), transparent) !important;
 }
 #eight-tail-sv-search-toggle,
+#eight-tail-sv-yt-config-toggle,
 #eight-tail-sv-close {
   width: 44px !important; height: 44px !important; border: 0 !important; border-radius: 50% !important;
   background: rgba(255,255,255,.22) !important; color: #fff !important; font-size: 20px !important;
@@ -396,6 +579,7 @@ function svEnsureStyle() {
   box-shadow: 0 4px 14px rgba(0,0,0,.4); pointer-events: auto !important;
   touch-action: manipulation !important; z-index: 100005 !important;
 }
+#eight-tail-sv-yt-config-toggle { font-size: 18px !important; }
 #eight-tail-sv-close {
   background: rgba(239, 68, 68, .92) !important; font-size: 26px !important;
 }
@@ -416,6 +600,9 @@ function svEnsureStyle() {
   touch-action: manipulation !important;
   user-select: text !important;
   -webkit-user-select: text !important;
+  max-height: min(72vh, 560px) !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
 }
 #eight-tail-short-video-root.search-open #eight-tail-sv-search-panel {
   display: block !important;
@@ -423,7 +610,8 @@ function svEnsureStyle() {
 #eight-tail-sv-search-row {
   display: flex !important; gap: 8px !important; align-items: center !important;
 }
-#eight-tail-sv-search-input {
+#eight-tail-sv-search-input,
+#eight-tail-sv-yt-key-input {
   flex: 1 1 auto !important; min-width: 0 !important;
   border: 1px solid rgba(255,255,255,.22) !important; border-radius: 12px !important;
   background: rgba(255,255,255,.12) !important; color: #fff !important;
@@ -432,9 +620,12 @@ function svEnsureStyle() {
   -webkit-user-select: text !important; user-select: text !important;
   z-index: 100005 !important;
 }
-#eight-tail-sv-search-input::placeholder { color: rgba(255,255,255,.45); }
+#eight-tail-sv-search-input::placeholder,
+#eight-tail-sv-yt-key-input::placeholder { color: rgba(255,255,255,.45); }
 #eight-tail-sv-search-go,
-#eight-tail-sv-search-collapse {
+#eight-tail-sv-search-collapse,
+#eight-tail-sv-yt-key-save,
+#eight-tail-sv-yt-key-clear {
   flex: 0 0 auto !important; border: 0 !important; border-radius: 12px !important;
   padding: 10px 12px !important; font-size: 13px !important; font-weight: 800 !important;
   cursor: pointer !important; pointer-events: auto !important; touch-action: manipulation !important;
@@ -442,6 +633,62 @@ function svEnsureStyle() {
 }
 #eight-tail-sv-search-go { background: #5b8def !important; }
 #eight-tail-sv-search-collapse { background: rgba(255,255,255,.14) !important; }
+#eight-tail-sv-yt-config {
+  display: none !important;
+  margin-top: 10px !important;
+  padding: 10px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid rgba(255,255,255,.1) !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+#eight-tail-short-video-root.yt-config-open #eight-tail-sv-yt-config {
+  display: block !important;
+}
+#eight-tail-sv-yt-config-title {
+  font-size: 13px !important; font-weight: 800 !important; margin-bottom: 8px !important;
+  pointer-events: none !important;
+}
+#eight-tail-sv-yt-key-row {
+  display: flex !important; flex-wrap: wrap !important; gap: 8px !important; align-items: center !important;
+  margin-bottom: 8px !important;
+}
+#eight-tail-sv-yt-key-save { background: #3d9a5f !important; }
+#eight-tail-sv-yt-key-clear { background: rgba(255,255,255,.14) !important; }
+#eight-tail-sv-yt-guide {
+  margin-top: 6px !important;
+  padding: 10px 11px !important;
+  border-radius: 10px !important;
+  background: rgba(91, 141, 239, 0.14) !important;
+  border: 1px solid rgba(91, 141, 239, 0.28) !important;
+  font-size: 11.5px !important;
+  line-height: 1.55 !important;
+  color: rgba(255,255,255,.88) !important;
+  opacity: 0.95 !important;
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+#eight-tail-sv-yt-guide a {
+  color: #9ec1ff !important;
+  text-decoration: underline !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+}
+#eight-tail-sv-yt-guide strong { font-weight: 800 !important; }
+#eight-tail-sv-yt-guide ol {
+  margin: 6px 0 4px 1.1em !important;
+  padding: 0 !important;
+}
+#eight-tail-sv-yt-guide li { margin: 3px 0 !important; }
+#eight-tail-sv-yt-guide .etc-sv-guide-note {
+  margin-top: 6px !important;
+  opacity: .78 !important;
+  font-style: italic !important;
+}
 #eight-tail-sv-search-tags {
   display: flex !important; flex-wrap: wrap !important; gap: 8px !important; margin-top: 10px !important;
   pointer-events: auto !important; z-index: 100005 !important;
@@ -604,8 +851,9 @@ function svBuildDom() {
   svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '10') {
+  if (root && root.dataset.svVersion === '11') {
     svForceRootCss(root);
+    svSyncYtConfigUi(root);
     return root;
   }
   if (root) {
@@ -614,13 +862,14 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '10';
+  root.dataset.svVersion = '11';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = [
     '<div id="eight-tail-sv-toolbar">',
     '  <button type="button" id="eight-tail-sv-search-toggle" title="搜索" aria-label="搜索">🔍</button>',
+    '  <button type="button" id="eight-tail-sv-yt-config-toggle" title="YouTube 配置" aria-label="YouTube 配置">🔑</button>',
     '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭">×</button>',
     '</div>',
     '<div id="eight-tail-sv-search-panel" aria-label="多源搜索">',
@@ -630,8 +879,26 @@ function svBuildDom() {
     '    <button type="button" id="eight-tail-sv-search-go">搜索</button>',
     '    <button type="button" id="eight-tail-sv-search-collapse">收起</button>',
     '  </div>',
+    '  <div id="eight-tail-sv-yt-config" aria-label="YouTube API Key 配置">',
+    '    <div id="eight-tail-sv-yt-config-title">🔑 YouTube 配置</div>',
+    '    <div id="eight-tail-sv-yt-key-row">',
+    '      <input id="eight-tail-sv-yt-key-input" type="password" autocomplete="off" spellcheck="false"',
+    '        placeholder="粘贴你的 YouTube API Key (AIzaSy...)" />',
+    '      <button type="button" id="eight-tail-sv-yt-key-save">保存配置</button>',
+    '      <button type="button" id="eight-tail-sv-yt-key-clear">清除配置</button>',
+    '    </div>',
+    '    <div id="eight-tail-sv-yt-guide">',
+    '      <div>💡 <strong>如何获取免费 API Key（每天免费 10,000 次）：</strong></div>',
+    '      <ol>',
+    '        <li>点击直达 <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> 创建项目。</li>',
+    '        <li>进入「API 和服务」→「库」，启用 <strong>YouTube Data API v3</strong>。</li>',
+    '        <li>在「凭据」页点击「+ 创建凭据」→「API 密钥」，复制粘贴到此处保存即可！</li>',
+    '      </ol>',
+    '      <div class="etc-sv-guide-note">未配置时将自动走免翻公共镜像，配置后秒级出画且更稳定。</div>',
+    '    </div>',
+    '  </div>',
     '  <div id="eight-tail-sv-search-tags" role="group" aria-label="快捷标签"></div>',
-    '  <div id="eight-tail-sv-search-hint">YouTube 搜关键词直接播 · Pornhub 搜出卡片列表</div>',
+    '  <div id="eight-tail-sv-search-hint">YouTube：公共镜像（可配 API Key 加速）· Pornhub：卡片列表</div>',
     '</div>',
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
@@ -670,6 +937,7 @@ function svBuildDom() {
   document.body.appendChild(root);
   svForceRootCss(root);
   svFillQuickTags(root);
+  svSyncYtConfigUi(root);
   svBindUi(root);
   return root;
 }
@@ -700,6 +968,11 @@ function svEls(root) {
     searchCollapse: root.querySelector('#eight-tail-sv-search-collapse'),
     searchTags: root.querySelector('#eight-tail-sv-search-tags'),
     searchHint: root.querySelector('#eight-tail-sv-search-hint'),
+    ytConfigToggle: root.querySelector('#eight-tail-sv-yt-config-toggle'),
+    ytConfig: root.querySelector('#eight-tail-sv-yt-config'),
+    ytKeyInput: root.querySelector('#eight-tail-sv-yt-key-input'),
+    ytKeySave: root.querySelector('#eight-tail-sv-yt-key-save'),
+    ytKeyClear: root.querySelector('#eight-tail-sv-yt-key-clear'),
     status: root.querySelector('#eight-tail-sv-status-bar'),
     stage: root.querySelector('#eight-tail-sv-stage'),
     apps: root.querySelector('#eight-tail-sv-apps'),
@@ -762,13 +1035,13 @@ function svSetStatus(text) {
   if (el) el.textContent = text || '';
 }
 
-function svShowHint(text) {
+function svShowHint(text, ms) {
   const hint = svEls().hint;
   if (!hint) return;
   hint.textContent = text;
   hint.classList.add('show');
   clearTimeout(svShowHint._t);
-  svShowHint._t = setTimeout(function () { hint.classList.remove('show'); }, 700);
+  svShowHint._t = setTimeout(function () { hint.classList.remove('show'); }, ms || 700);
 }
 
 function svMarkAppActive(appName) {
@@ -801,6 +1074,7 @@ function svSetSearchOpen(on) {
   if (root) root.classList.toggle('search-open', svState.searchOpen);
   if (svState.searchOpen) {
     svFillQuickTags(root);
+    svSyncYtConfigUi(root);
     setTimeout(function () {
       try {
         if (els.searchInput) {
@@ -809,22 +1083,79 @@ function svSetSearchOpen(on) {
         }
       } catch (_) {}
     }, 40);
+  } else {
+    svSetYtConfigOpen(false);
   }
 }
 
-function svPlayYoutubeSearch(keyword) {
+function svSetYtConfigOpen(on) {
+  svState.ytConfigOpen = !!on;
+  const root = svGetRoot();
+  if (!root) return;
+  root.classList.toggle('yt-config-open', svState.ytConfigOpen);
+  if (svState.ytConfigOpen) {
+    if (!svState.searchOpen) svSetSearchOpen(true);
+    svSyncYtConfigUi(root);
+    setTimeout(function () {
+      try {
+        const input = root.querySelector('#eight-tail-sv-yt-key-input');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      } catch (_) {}
+    }, 40);
+  }
+}
+
+async function svPlayYoutubeSearch(keyword) {
   const kw = String(keyword || '').trim();
   if (!kw) {
     svShowHint('请输入关键词');
     return;
   }
+  if (svState.ytSearching) {
+    svShowHint('搜索中…');
+    return;
+  }
   svRememberSearch(kw);
   svMarkAppActive('youtube');
   svSetBrowseOpen(false);
-  svSetEmbedSrc(svYoutubeSearchEmbedUrl(kw), 'youtube', 'search:' + kw);
-  svShowHint('搜：' + kw);
-  svSetStatus('YouTube 搜索流 · ' + kw);
-  svSetSearchOpen(false);
+  svState.ytSearching = true;
+  const hasKey = !!svGetYtApiKey();
+  svShowHint(hasKey ? '官方 API 搜索中…' : '搜索中…');
+  svSetStatus((hasKey ? 'YouTube API · ' : 'Invidious 搜索 · ') + kw);
+  try {
+    const list = await svSearchYouTubeVideos(kw);
+    if (list && list.length) {
+      svState.ytPlaylist = list;
+      svState.ytSearchKw = kw;
+      svState.ytIndex = 0;
+      svPlayYoutubeAt(0);
+      svShowHint('找到 ' + list.length + ' 条');
+      svSetStatus(
+        (svState.ytUsedOfficial ? '官方 API · ' : 'YouTube 搜索 · ') + kw +
+        ' · ' + list.length + ' 条 · 上下滑切换'
+      );
+    } else {
+      /* 全部超时 / 无结果 → 精选兜底，杜绝黑屏 */
+      svState.ytPlaylist = null;
+      svState.ytSearchKw = '';
+      svPlayYoutubeAt(0);
+      svShowHint('搜索失败，已用精选池');
+      svSetStatus('镜像超时 · 已回退精选 Shorts/动漫池');
+    }
+  } catch (err) {
+    console.warn(err);
+    svState.ytPlaylist = null;
+    svState.ytSearchKw = '';
+    svPlayYoutubeAt(0);
+    svShowHint('搜索失败，已用精选池');
+    svSetStatus('搜索异常 · 已回退精选池');
+  } finally {
+    svState.ytSearching = false;
+    svSetSearchOpen(false);
+  }
 }
 
 async function svSearchAdult(keyword) {
@@ -848,16 +1179,14 @@ async function svRunSearch(rawKw) {
   }
   if (els.searchInput) els.searchInput.value = kw;
 
-  /* 按当前模式；默认 YouTube */
   if (svState.mode === 'adult' || (els.root && els.root.querySelector('.etc-sv-app[data-app="pornhub"].is-on'))) {
     await svSearchAdult(kw);
     return;
   }
-  /* native 等非成人模式 → YouTube 搜索流 */
   if (svState.mode !== 'youtube') {
     svMarkAppActive('youtube');
   }
-  svPlayYoutubeSearch(kw);
+  await svPlayYoutubeSearch(kw);
 }
 
 function svUpdateChrome() {
@@ -866,16 +1195,14 @@ function svUpdateChrome() {
   if (!els.root) return;
 
   if (svState.mode === 'youtube') {
-    const isSearch = String(svState.embedId || '').indexOf('search:') === 0;
+    const list = svYtActiveList();
+    const yt = list[svState.ytIndex] || list[0];
+    const isSearch = !!(svState.ytPlaylist && svState.ytPlaylist.length);
     if (els.author) els.author.textContent = '@YouTube' + (isSearch ? ' 搜索' : ' Shorts');
     if (els.title) {
-      if (isSearch) {
-        els.title.textContent = '关键词 · ' + String(svState.embedId).slice(7);
-      } else {
-        const yt = SV_YT_SHORTS[svState.ytIndex] || SV_YT_SHORTS[0];
-        els.title.textContent = (yt ? yt.title : 'Shorts') +
-          ' · ' + (svState.ytIndex + 1) + '/' + SV_YT_SHORTS.length;
-      }
+      const name = yt ? (yt.title || yt.id) : 'Shorts';
+      els.title.textContent = name + ' · ' + (svState.ytIndex + 1) + '/' + list.length +
+        (isSearch && svState.ytSearchKw ? (' · ' + svState.ytSearchKw) : '');
     }
   } else if (svState.mode === 'adult') {
     const a = svState.adultList[svState.adultIndex];
@@ -1017,22 +1344,33 @@ function svPlayCurrent() {
   svSetStatus((svState.index + 1) + ' / ' + svState.feed.length + ' · 上下滑切内置片');
 }
 
-/* —— YouTube Shorts —— */
+/* —— YouTube：单视频 ID 播放 / Invidious 搜索列表 —— */
 
 function svPlayYoutubeAt(index) {
-  const list = SV_YT_SHORTS;
+  const list = svYtActiveList();
   if (!list.length) return;
   const i = ((index % list.length) + list.length) % list.length;
   svState.ytIndex = i;
-  try { localStorage.setItem(SV_YT_IDX_LS_KEY, String(i)); } catch (_) {}
+  if (!svState.ytPlaylist) {
+    try { localStorage.setItem(SV_YT_IDX_LS_KEY, String(i)); } catch (_) {}
+  }
   const yt = list[i];
+  const videoId = yt.id || yt;
   svMarkAppActive('youtube');
-  svSetEmbedSrc(svYoutubeEmbedUrl(yt.id), 'youtube', yt.id);
-  svShowHint('Shorts ' + (i + 1) + '/' + list.length);
-  svSetStatus('YouTube Shorts · 点「换一个」或上滑切换');
+  /* 只认纯正单视频 embed，绝不使用 listType=search */
+  svSetEmbedSrc(svYoutubeEmbedUrl(videoId), 'youtube', videoId);
+  const isSearch = !!(svState.ytPlaylist && svState.ytPlaylist.length);
+  svShowHint((isSearch ? '搜索' : 'Shorts') + ' ' + (i + 1) + '/' + list.length);
+  svSetStatus(
+    (isSearch ? ('搜索 · ' + (svState.ytSearchKw || '')) : 'YouTube Shorts') +
+    ' · ' + (i + 1) + '/' + list.length + ' · 上下滑切换'
+  );
 }
 
 function svOpenYoutubeFeed() {
+  /* 点图标回到精选池（清空搜索列表） */
+  svState.ytPlaylist = null;
+  svState.ytSearchKw = '';
   let start = 0;
   try {
     const n = parseInt(localStorage.getItem(SV_YT_IDX_LS_KEY) || '0', 10);
@@ -1041,12 +1379,20 @@ function svOpenYoutubeFeed() {
   svPlayYoutubeAt(start);
 }
 
-function svNextYoutube() {
-  let next = svState.ytIndex + 1;
-  if (Math.random() > 0.5 && SV_YT_SHORTS.length > 2) {
-    next = Math.floor(Math.random() * SV_YT_SHORTS.length);
+function svNextYoutube(delta) {
+  const d = delta == null ? 1 : delta;
+  const list = svYtActiveList();
+  if (!list.length) return;
+  /* 搜索结果：顺序切换；精选池：可随机跳 */
+  if (svState.ytPlaylist && svState.ytPlaylist.length) {
+    svPlayYoutubeAt(svState.ytIndex + d);
+    return;
   }
-  if (next === svState.ytIndex) next = svState.ytIndex + 1;
+  let next = svState.ytIndex + d;
+  if (d > 0 && Math.random() > 0.55 && list.length > 2) {
+    next = Math.floor(Math.random() * list.length);
+  }
+  if (next === svState.ytIndex) next = svState.ytIndex + d;
   svPlayYoutubeAt(next);
 }
 
@@ -1211,8 +1557,8 @@ function svOnAppDockClick(btn) {
 function svGo(delta) {
   if (svState.browseOpen) return;
   if (svState.mode === 'youtube') {
-    if (delta > 0) svNextYoutube();
-    else svPlayYoutubeAt(svState.ytIndex - 1);
+    if (delta > 0) svNextYoutube(1);
+    else svNextYoutube(-1);
     return;
   }
   if (svState.mode === 'adult') {
@@ -1233,7 +1579,7 @@ function svGo(delta) {
 function svOnNextClick() {
   if (!svClicksArmed()) return;
   if (svState.mode === 'youtube') {
-    svNextYoutube();
+    svNextYoutube(1);
     return;
   }
   if (svState.mode === 'adult') {
@@ -1294,6 +1640,8 @@ function svIsInteractiveTarget(el) {
     el.closest('#eight-tail-sv-browse') ||
     el.closest('#eight-tail-sv-search-panel') ||
     el.closest('#eight-tail-sv-search-toggle') ||
+    el.closest('#eight-tail-sv-yt-config-toggle') ||
+    el.closest('#eight-tail-sv-yt-config') ||
     el.closest('button') ||
     el.closest('input') ||
     el.closest('textarea') ||
@@ -1322,6 +1670,61 @@ function svBindUi(root) {
       e.preventDefault();
       stopBubble(e);
       svSetSearchOpen(!svState.searchOpen);
+    });
+  }
+  if (els.ytConfigToggle) {
+    els.ytConfigToggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      if (!svState.searchOpen) {
+        svSetSearchOpen(true);
+        svSetYtConfigOpen(true);
+      } else {
+        svSetYtConfigOpen(!svState.ytConfigOpen);
+      }
+    });
+  }
+  if (els.ytKeySave) {
+    els.ytKeySave.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      const raw = els.ytKeyInput ? els.ytKeyInput.value : '';
+      if (!String(raw || '').trim()) {
+        svShowHint('请先粘贴 API Key', 1400);
+        return;
+      }
+      if (svSaveYtApiKey(raw)) {
+        svSyncYtConfigUi(root);
+        svShowHint('YouTube API Key 已生效，搜索已加速！', 2200);
+        svSetStatus('YouTube 官方 API 已启用');
+      } else {
+        svShowHint('保存失败，请重试', 1400);
+      }
+    });
+  }
+  if (els.ytKeyClear) {
+    els.ytKeyClear.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svClearYtApiKey();
+      if (els.ytKeyInput) els.ytKeyInput.value = '';
+      svUpdateYtSearchHint();
+      svShowHint('已清除 API Key，改用公共镜像', 1800);
+      svSetStatus('YouTube：公共镜像模式');
+    });
+  }
+  if (els.ytKeyInput) {
+    els.ytKeyInput.addEventListener('keydown', function (e) {
+      stopBubble(e);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (els.ytKeySave) els.ytKeySave.click();
+      }
+    });
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove'].forEach(function (evName) {
+      els.ytKeyInput.addEventListener(evName, function (e) {
+        stopBubble(e);
+      }, { passive: true });
     });
   }
   if (els.searchCollapse) {
