@@ -243,13 +243,13 @@
 }
 
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-embed,
-#eight-tail-short-video-root.mode-embed #eight-tail-sv-bili,
-#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-embed,
-#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-bili {
+#eight-tail-short-video-root.mode-adult #eight-tail-sv-embed,
+#eight-tail-short-video-root.mode-youtube #eight-tail-sv-embed {
   display: block !important;
 }
 
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-video,
-#eight-tail-short-video-root.mode-bilibili #eight-tail-sv-video {
+#eight-tail-short-video-root.mode-adult #eight-tail-sv-video,
+#eight-tail-short-video-root.mode-youtube #eight-tail-sv-video {
   display: none !important;
 }

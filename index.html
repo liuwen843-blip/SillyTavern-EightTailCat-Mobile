@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="referrer" content="no-referrer" />
   <title>八条猫桌宠 (移动触屏版)</title>
   <script>
     (function () {
@@ -1568,7 +1569,6 @@
     }
     .app-hub-icon[data-app="douyin"] .app-emoji,
     .app-hub-icon[data-app="short-video"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
-    .app-hub-icon[data-app="bilibili"] .app-emoji { background: linear-gradient(160deg, #ff8fab, #fb7299); }
     .app-hub-icon[data-app="youtube"] .app-emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
     .app-hub-icon[data-app="pornhub"] .app-emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
     .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
@@ -3965,22 +3965,17 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用与媒体中心</h3>
-        <p class="app-hub-sub">点下方图标切换播放或唤起 App<br />桌宠 📱 只负责开关本弹窗，不会跳外链</p>
+        <p class="app-hub-sub">YouTube Shorts · 成人片源卡片点播 · 抖音/小红书唤起 App<br />桌宠 📱 只负责开关，不会跳外链</p>
         <div id="app-hub-grid" aria-label="应用列表">
-          <button type="button" class="app-hub-icon" data-app="bilibili" data-action="embed-bili">
-            <span class="app-emoji" aria-hidden="true">📺</span>
-            <span class="app-name">B站</span>
-            <span class="app-open-hint">内嵌播放</span>
-          </button>
           <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
             <span class="app-emoji" aria-hidden="true">▶</span>
             <span class="app-name">YouTube</span>
-            <span class="app-open-hint">内嵌播放</span>
+            <span class="app-open-hint">Shorts 流</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="pornhub" data-action="embed-ph">
             <span class="app-emoji" aria-hidden="true">🔥</span>
             <span class="app-name">Pornhub</span>
-            <span class="app-open-hint">内嵌播放</span>
+            <span class="app-open-hint">卡片点播</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
             data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
@@ -3996,8 +3991,12 @@
           </button>
         </div>
         <div id="app-hub-player" aria-label="内嵌播放区">
-          <iframe id="app-hub-embed" title="内嵌播放器" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
-          <div id="app-hub-player-hint">点上方 B站 / YouTube / Pornhub 开始播放</div>
+          <iframe id="app-hub-embed" title="内嵌播放器"
+            scrolling="no" frameborder="0" allowfullscreen="true"
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
+            referrerpolicy="no-referrer"></iframe>
+          <div id="app-hub-player-hint">点上方 YouTube / Pornhub 打开全屏流</div>
         </div>
       </div>
     </div>
@@ -12773,6 +12772,13 @@
         const player = document.getElementById("app-hub-player");
         if (!frame) return;
         try { frame.src = "about:blank"; } catch (_) {}
+        try {
+          frame.setAttribute("scrolling", "no");
+          frame.setAttribute("frameborder", "0");
+          frame.setAttribute("allowfullscreen", "true");
+          frame.setAttribute("sandbox", "allow-scripts allow-same-origin allow-popups allow-forms allow-presentation");
+          frame.setAttribute("referrerpolicy", "no-referrer");
+        } catch (_) {}
         frame.src = url;
         if (player) player.classList.add("has-media");
       }
@@ -12923,118 +12929,53 @@
         const actionType = action || (btn && btn.getAttribute("data-action")) || "";
         const app = name || (btn && btn.getAttribute("data-app")) || "";
 
-        if (actionType === "embed-bili" || app === "bilibili") {
-          var savedBv = "";
-          try {
-            savedBv = String(localStorage.getItem("eight_tail_short_video_embed_id") ||
-              localStorage.getItem("eight_tail_short_video_bvid") || "").trim();
-            var mBv = savedBv.match(/(BV[a-zA-Z0-9]{10})/i);
-            savedBv = mBv ? mBv[1] : "";
-            if (/^BV1Wx411n7Mh$/i.test(savedBv)) savedBv = "";
-          } catch (_) { savedBv = ""; }
-          if (savedBv) {
-            setAppHubEmbed("https://player.bilibili.com/player.html?bvid=" +
-              encodeURIComponent(savedBv) + "&page=1&high_quality=1&danmaku=0&autoplay=1");
-            try { showToast("B站 · " + savedBv, 1000); } catch (_) {}
-            return;
-          }
-          var inputBv = window.prompt("请输入 B 站视频链接或 BV 号（如 BV1xx411c7mD）", "");
-          if (!inputBv) return;
-          var parsed = String(inputBv).match(/(BV[a-zA-Z0-9]{10})/i);
-          if (!parsed) {
-            try { showToast("未识别到 BV 号", 1400); } catch (_) {}
-            return;
-          }
-          if (/^BV1Wx411n7Mh$/i.test(parsed[1])) {
-            try { showToast("该 BV 已失效，请换一个", 1600); } catch (_) {}
-            return;
-          }
-          try {
-            localStorage.setItem("eight_tail_short_video_embed_id", parsed[1]);
-            localStorage.setItem("eight_tail_short_video_mode", "bilibili");
-          } catch (_) {}
-          setAppHubEmbed("https://player.bilibili.com/player.html?bvid=" +
-            encodeURIComponent(parsed[1]) + "&page=1&high_quality=1&danmaku=0&autoplay=1");
-          try { showToast("B站内嵌播放", 1000); } catch (_) {}
-          return;
-        }
-        if (actionType === "embed-yt" || app === "youtube") {
-          /* 免输入：官方 Shorts 播放列表流 */
-          var ytLists = [
-            "PLrEnWoR732-BHrPp_AK4TCQTko556VCjc",
-            "PLFgquLnL59alCl_2TQvOiD5Vgm1hCaFAr",
-            "PLMC9KNkIncKvYin_EEFV0c7GXEEWUHCf",
-            "PLw-VjHDlEOgvWPpRBs9FRGgJcqpMBoKeN"
-          ];
-          var ytIdx = Math.floor(Math.random() * ytLists.length);
-          try {
-            var savedYt = localStorage.getItem("eight_tail_short_video_yt_list");
-            if (savedYt && ytLists.indexOf(savedYt) >= 0) ytIdx = ytLists.indexOf(savedYt);
-          } catch (_) {}
-          var ytId = ytLists[ytIdx];
-          try { localStorage.setItem("eight_tail_short_video_yt_list", ytId); } catch (_) {}
-          setAppHubEmbed(
-            "https://www.youtube-nocookie.com/embed?listType=playlist&list=" +
-            encodeURIComponent(ytId) + "&autoplay=1&rel=0"
-          );
-          try { showToast("YouTube 短视频流", 1000); } catch (_) {}
-          /* 优先打开宿主全屏流（带下一条/滑动） */
+        function openHostMedia(platform) {
           try {
             if (window.parent && window.parent !== window && typeof window.parent.openShortVideoPlayer === "function") {
               window.parent.openShortVideoPlayer();
               try { closeAppHubModal(); } catch (_) {}
               setTimeout(function () {
                 try {
-                  window.parent.postMessage({ type: "eight-tail-media-play", platform: "youtube" }, "*");
+                  window.parent.postMessage({ type: "eight-tail-media-play", platform: platform }, "*");
                 } catch (_) {}
               }, 80);
+              return true;
             }
           } catch (_) {}
+          try {
+            if (typeof notifyStHost === "function") {
+              notifyStHost({ type: "eight-tail-open-media-hub" });
+              setTimeout(function () {
+                try {
+                  if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: "eight-tail-media-play", platform: platform }, "*");
+                  }
+                } catch (_) {}
+              }, 120);
+              try { closeAppHubModal(); } catch (_) {}
+              return true;
+            }
+          } catch (_) {}
+          return false;
+        }
+
+        if (actionType === "embed-yt" || app === "youtube") {
+          if (openHostMedia("youtube")) {
+            try { showToast("YouTube Shorts", 1000); } catch (_) {}
+            return;
+          }
+          var ytIds = ["aqz-KE-bpKQ", "YE7VzlLtp-4", "LXb3EKWsInQ", "ScMzIvxBSi4", "jNQXAC9IVRw"];
+          var ytId = ytIds[Math.floor(Math.random() * ytIds.length)];
+          setAppHubEmbed("https://www.youtube-nocookie.com/embed/" + ytId + "?autoplay=1&rel=0");
+          try { showToast("YouTube Shorts", 1000); } catch (_) {}
           return;
         }
         if (actionType === "embed-ph" || app === "pornhub") {
-          try {
-            if (window.parent && window.parent !== window && typeof window.parent.openShortVideoPlayer === "function") {
-              window.parent.openShortVideoPlayer();
-              try { closeAppHubModal(); } catch (_) {}
-              setTimeout(function () {
-                try {
-                  window.parent.postMessage({ type: "eight-tail-media-play", platform: "pornhub" }, "*");
-                } catch (_) {}
-              }, 80);
-              return;
-            }
-          } catch (_) {}
-          /* 本地兜底：先播热门 viewkey，后台尝试 API */
-          var phFallback = ["ph56fc63cec4617", "ph5b1a1f4b1f8b0", "ph5c8a9b0c1d2e3", "ph60a1b2c3d4e5f"];
-          window.__appHubPhKeys = phFallback.slice();
-          window.__appHubPhIndex = 0;
-          setAppHubEmbed("https://www.pornhub.com/embed/" + phFallback[0] + "?autoplay=1");
-          try { showToast("Pornhub 热门流", 1000); } catch (_) {}
-          fetch("https://www.pornhub.com/webmasters/search?ordering=mostviewed&period=weekly", {
-            method: "GET",
-            credentials: "omit",
-            mode: "cors",
-            cache: "no-store"
-          }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
-            .then(function (data) {
-              var videos = (data && data.videos) || [];
-              var keys = [];
-              for (var i = 0; i < videos.length; i++) {
-                var v = videos[i] || {};
-                var k = v.video_id || v.vkey || v.viewkey || "";
-                if (!k && v.url) {
-                  var m = String(v.url).match(/[?&]viewkey=([^&#]+)/i);
-                  if (m) k = decodeURIComponent(m[1]);
-                }
-                if (k) keys.push(String(k));
-              }
-              if (keys.length) {
-                window.__appHubPhKeys = keys;
-                window.__appHubPhIndex = 0;
-                setAppHubEmbed("https://www.pornhub.com/embed/" + keys[0] + "?autoplay=1");
-              }
-            }).catch(function () {});
+          if (openHostMedia("pornhub")) {
+            try { showToast("成人片源列表", 1000); } catch (_) {}
+            return;
+          }
+          try { showToast("请在酒馆全屏媒体中心打开 Pornhub", 1600); } catch (_) {}
           return;
         }
 

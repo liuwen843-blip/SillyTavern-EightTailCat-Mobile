@@ -1,49 +1,68 @@
 /**
- * 酒馆宿主层 · 沉浸式短视频流媒体中心
- * - YouTube：预置 Shorts 播放列表，点开即刷，可换列表
- * - Pornhub：Webmaster 公开 API + 热门 viewkey 兜底，上下滑切
- * - B站：仅用已存 BV 或轻量输入；无复杂换源面板
- * - 关闭立刻清空 iframe，杜绝漏声
+ * 酒馆宿主层 · 沉浸式短视频流媒体中心 v9
+ * - YouTube：精选公开 Shorts 单视频列表，一键切换
+ * - 成人源：三重 CORS 代理 + Eporner/PH 官方接口，卡片列表点播
+ * - 无 B站；关闭立刻清空 iframe，杜绝漏声
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v8';
+const SV_STYLE_ID = 'eight-tail-sv-style-v9';
 const SV_OPEN_GUARD_MS = 550;
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode';
-const SV_EMBED_LS_KEY = 'eight_tail_short_video_embed_id';
-const SV_BV_LS_KEY_LEGACY = 'eight_tail_short_video_bvid';
-const SV_YT_LIST_LS_KEY = 'eight_tail_short_video_yt_list';
+const SV_YT_IDX_LS_KEY = 'eight_tail_short_video_yt_idx';
 const SV_SWIPE_PX = 48;
 
-const SV_DEAD_BVIDS = { BV1Wx411n7Mh: 1 };
-
-/** 精选开放 Shorts / 短片播放列表 */
-const SV_YT_PLAYLISTS = [
-  { id: 'PLrEnWoR732-BHrPp_AK4TCQTko556VCjc', title: 'Shorts 精选流' },
-  { id: 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaFAr', title: '流行短片' },
-  { id: 'PLMC9KNkIncKvYin_EEFV0c7GXEEWUHCf', title: '热门混剪' },
-  { id: 'PLw-VjHDlEOgvWPpRBs9FRGgJcqpMBoKeN', title: '精选混剪 B' },
-  { id: 'PL4fGSI1pDJn6jXS_Tv_N9B-ZFhR9JqUwX', title: '全球热门' },
+/** 精选公开、可嵌 Shorts / 短片（单视频 ID，非失效 Playlist） */
+const SV_YT_SHORTS = [
+  { id: 'aqz-KE-bpKQ', title: 'Big Buck Bunny 预告' },
+  { id: 'YE7VzlLtp-4', title: 'Big Buck Bunny' },
+  { id: 'LXb3EKWsInQ', title: 'Costa Rica in 4K' },
+  { id: 'ScMzIvxBSi4', title: 'Peaceful Nature' },
+  { id: 'C0DPdy98e4c', title: 'Test Short Clip' },
+  { id: 'hY7m5jjJ9mM', title: 'Cats Short' },
+  { id: 'jNQXAC9IVRw', title: 'Me at the zoo' },
+  { id: 'kJQP7kiw5Fk', title: 'Despacito' },
+  { id: '9bZkp7q19f0', title: 'Gangnam Style' },
+  { id: 'fJ9rUzIMcZQ', title: 'Bohemian Rhapsody' },
+  { id: 'OPf0YbXqDm0', title: 'Uptown Funk' },
+  { id: 'RgKAFK5djSk', title: 'See You Again' },
 ];
 
-/** Pornhub Webmaster 公开搜索（可能受 CORS 限制） */
+const SV_EPORNER_API =
+  'https://www.eporner.com/api/v2/video/search/?query=popular&per_page=24&page=1&order=most-popular&thumbsize=big&format=json';
 const SV_PH_API =
   'https://www.pornhub.com/webmasters/search?ordering=mostviewed&period=weekly&thumbsize=large';
 
-/** CORS 失败时的热门 viewkey 兜底（公开可嵌，点开即有片） */
-const SV_PH_FALLBACK_KEYS = [
-  'ph56fc63cec4617',
-  'ph5b733c2e8c8c8',
-  'ph5c8f0a1b2c3d4',
-  'ph5d6e7f8a9b0c1',
-  'ph5e4c0d1e2f3a4',
-  'ph5f1a2b3c4d5e6',
-  'ph60a1b2c3d4e5f6',
-  'ph61b2c3d4e5f6a7',
-  'ph62c3d4e5f6a7b8',
-  'ph63d4e5f6a7b8c9',
-  '65a1b2c3d4e5f',
-  '66b2c3d4e5f6a',
+/** 三重免跨域代理 */
+const SV_CORS_PROXIES = [
+  {
+    name: 'allorigins',
+    build: function (url) {
+      return 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+    },
+    parse: function (data) {
+      if (data && typeof data.contents === 'string') {
+        try { return JSON.parse(data.contents); } catch (_) {
+          return data.contents;
+        }
+      }
+      return data;
+    },
+  },
+  {
+    name: 'codetabs',
+    build: function (url) {
+      return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
+    },
+    parse: function (data) { return data; },
+  },
+  {
+    name: 'corsproxy',
+    build: function (url) {
+      return 'https://corsproxy.io/?' + encodeURIComponent(url);
+    },
+    parse: function (data) { return data; },
+  },
 ];
 
 const SV_BUILTIN_FEED = [
@@ -79,7 +98,7 @@ const SV_BUILTIN_FEED = [
   },
 ];
 
-const SV_EMBED_MODES = { bilibili: 1, youtube: 1, pornhub: 1 };
+const SV_EMBED_MODES = { youtube: 1, adult: 1 };
 
 let svState = {
   index: 0,
@@ -90,15 +109,14 @@ let svState = {
   startX: 0,
   moved: false,
   open: false,
-  preloadVideo: null,
-  mode: 'native',
+  mode: 'native', /* native | youtube | adult */
   embedId: '',
-  lastEmbed: { mode: '', id: '' },
   ignoreClicksUntil: 0,
-  ytListIndex: 0,
-  phKeys: SV_PH_FALLBACK_KEYS.slice(),
-  phIndex: 0,
-  phLoading: false,
+  ytIndex: 0,
+  adultList: [],
+  adultIndex: 0,
+  adultLoading: false,
+  browseOpen: false,
 };
 
 function svIsEmbedMode(mode) {
@@ -108,6 +126,8 @@ function svIsEmbedMode(mode) {
 function svReadMode() {
   try {
     const m = localStorage.getItem(SV_MODE_LS_KEY);
+    if (m === 'bilibili') return 'native'; /* 旧 B站模式废弃 */
+    if (m === 'pornhub') return 'adult';
     if (m === 'native' || svIsEmbedMode(m)) return m;
   } catch (_) {}
   return 'native';
@@ -118,84 +138,178 @@ function svWriteMode(mode) {
   try { localStorage.setItem(SV_MODE_LS_KEY, m); } catch (_) {}
 }
 
-function svIsDeadBvid(id) {
-  const bv = String(svExtractBvId(id) || id || '').trim();
-  if (!bv) return false;
-  const upper = bv.toUpperCase();
-  for (const dead in SV_DEAD_BVIDS) {
-    if (Object.prototype.hasOwnProperty.call(SV_DEAD_BVIDS, dead) && dead.toUpperCase() === upper) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function svPurgeDeadBvidStorage() {
+function svEnsureNoReferrerMeta() {
   try {
-    [SV_EMBED_LS_KEY, SV_BV_LS_KEY_LEGACY].forEach(function (k) {
-      const v = String(localStorage.getItem(k) || '');
-      if (/BV1Wx411n7Mh/i.test(v)) localStorage.removeItem(k);
-    });
-    if (localStorage.getItem(SV_MODE_LS_KEY) === 'bilibili') {
-      const left = String(localStorage.getItem(SV_EMBED_LS_KEY) || '').trim();
-      if (!left) localStorage.setItem(SV_MODE_LS_KEY, 'native');
+    let meta = document.querySelector('meta[name="referrer"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'referrer');
+      document.head.appendChild(meta);
     }
+    meta.setAttribute('content', 'no-referrer');
   } catch (_) {}
 }
 
-function svReadEmbedId() {
+function svYoutubeEmbedUrl(videoId) {
+  return 'https://www.youtube-nocookie.com/embed/' +
+    encodeURIComponent(String(videoId || '').trim()) +
+    '?autoplay=1&rel=0&modestbranding=1&playsinline=1';
+}
+
+function svFormatDuration(sec) {
+  const n = Math.max(0, Math.floor(Number(sec) || 0));
+  const m = Math.floor(n / 60);
+  const s = n % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+/* —— 三重代理穿透 —— */
+
+async function svFetchJsonDirect(url) {
+  const res = await fetch(url, {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+    mode: 'cors',
+    referrerPolicy: 'no-referrer',
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.json();
+}
+
+async function svFetchJsonViaProxies(targetUrl) {
+  /* 先试直连 */
   try {
-    const cur = String(localStorage.getItem(SV_EMBED_LS_KEY) || '').trim();
-    const legacy = String(localStorage.getItem(SV_BV_LS_KEY_LEGACY) || '').trim();
-    const id = cur || legacy;
-    if (svIsDeadBvid(id)) {
-      svPurgeDeadBvidStorage();
-      return '';
+    return await svFetchJsonDirect(targetUrl);
+  } catch (_) {}
+
+  for (let i = 0; i < SV_CORS_PROXIES.length; i++) {
+    const proxy = SV_CORS_PROXIES[i];
+    try {
+      const res = await fetch(proxy.build(targetUrl), {
+        method: 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        mode: 'cors',
+        referrerPolicy: 'no-referrer',
+      });
+      if (!res.ok) continue;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      let raw;
+      if (ct.indexOf('application/json') >= 0 || proxy.name === 'allorigins') {
+        raw = await res.json();
+      } else {
+        const text = await res.text();
+        try { raw = JSON.parse(text); } catch (_) { raw = text; }
+      }
+      const parsed = proxy.parse(raw);
+      if (typeof parsed === 'string') {
+        try { return JSON.parse(parsed); } catch (_) { continue; }
+      }
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch (err) {
+      console.warn('[EightTailCat] proxy fail:', proxy.name, err);
     }
-    return id;
-  } catch (_) { return ''; }
+  }
+  throw new Error('all proxies failed');
 }
 
-function svWriteEmbedId(id) {
-  try { localStorage.setItem(SV_EMBED_LS_KEY, String(id || '').trim()); } catch (_) {}
+function svNormalizeAdultItems(source, data) {
+  const out = [];
+  const seen = Object.create(null);
+
+  function push(item) {
+    if (!item || !item.embedUrl || !item.id) return;
+    if (seen[item.id]) return;
+    seen[item.id] = 1;
+    out.push(item);
+  }
+
+  if (source === 'eporner') {
+    const videos = (data && data.videos) || [];
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i] || {};
+      const id = String(v.id || v.video_id || '').trim();
+      if (!id) continue;
+      const thumb = v.default_thumb || v.thumb ||
+        (v.thumbs && v.thumbs[0] && (v.thumbs[0].src || v.thumbs[0])) || '';
+      const len = v.length_sec != null ? v.length_sec :
+        (v.length_min != null ? Math.round(Number(v.length_min) * 60) : 0);
+      push({
+        id: 'ep_' + id,
+        title: String(v.title || 'Eporner 视频').slice(0, 80),
+        thumb: String(thumb || ''),
+        duration: svFormatDuration(len),
+        durationSec: len,
+        embedUrl: 'https://www.eporner.com/embed/' + encodeURIComponent(id),
+        source: 'eporner',
+      });
+    }
+  }
+
+  if (source === 'pornhub') {
+    let videos = [];
+    if (data && Array.isArray(data.videos)) videos = data.videos;
+    else if (data && data.videos && Array.isArray(data.videos.video)) videos = data.videos.video;
+    else if (Array.isArray(data)) videos = data;
+
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i] || {};
+      let key = String(v.video_id || v.vkey || v.viewkey || '').trim();
+      if (!key && v.url) {
+        const m = String(v.url).match(/[?&]viewkey=([^&#]+)/i);
+        if (m) key = decodeURIComponent(m[1]);
+      }
+      if (!key) continue;
+      const thumb = v.thumb || v.default_thumb || v.thumbnail ||
+        (v.thumbs && v.thumbs[0]) || '';
+      const len = v.duration != null ? v.duration :
+        (v.length != null ? v.length : 0);
+      push({
+        id: 'ph_' + key,
+        title: String(v.title || 'Pornhub 视频').slice(0, 80),
+        thumb: String(thumb || ''),
+        duration: typeof len === 'string' ? len : svFormatDuration(len),
+        durationSec: typeof len === 'number' ? len : 0,
+        embedUrl: 'https://www.pornhub.com/embed/' + encodeURIComponent(key) + '?autoplay=1',
+        source: 'pornhub',
+      });
+    }
+  }
+
+  return out;
 }
 
-function svExtractBvId(text) {
-  const s = String(text || '').trim();
-  if (!s) return null;
-  const m = s.match(/(BV[a-zA-Z0-9]{10})/i);
-  return m ? m[1] : null;
+async function svLoadAdultCatalog() {
+  const merged = [];
+  /* Eporner 官方公开 API（优先，常可直连或走代理） */
+  try {
+    const ep = await svFetchJsonViaProxies(SV_EPORNER_API);
+    merged.push.apply(merged, svNormalizeAdultItems('eporner', ep));
+  } catch (err) {
+    console.warn('[EightTailCat] Eporner fail', err);
+  }
+  /* Pornhub Webmaster 经代理 */
+  try {
+    const ph = await svFetchJsonViaProxies(SV_PH_API);
+    merged.push.apply(merged, svNormalizeAdultItems('pornhub', ph));
+  } catch (err) {
+    console.warn('[EightTailCat] Pornhub fail', err);
+  }
+
+  if (!merged.length) {
+    /* 极简兜底：Eporner 热门页常见可嵌 ID 形态不可靠时，用二次 Eporner 搜索词 */
+    try {
+      const alt = await svFetchJsonViaProxies(
+        'https://www.eporner.com/api/v2/video/search/?query=hot&per_page=12&page=1&format=json&thumbsize=big&order=most-popular'
+      );
+      merged.push.apply(merged, svNormalizeAdultItems('eporner', alt));
+    } catch (_) {}
+  }
+  return merged;
 }
 
-function svGetSavedBilibiliId() {
-  const id = svExtractBvId(svReadEmbedId());
-  if (id && !svIsDeadBvid(id)) return id;
-  return '';
-}
-
-function svYoutubePlaylistUrl(listId) {
-  const id = encodeURIComponent(String(listId || '').trim());
-  return 'https://www.youtube-nocookie.com/embed?listType=playlist&list=' + id +
-    '&autoplay=1&rel=0&modestbranding=1';
-}
-
-function svPornhubEmbedUrl(viewkey) {
-  const id = encodeURIComponent(String(viewkey || '').trim());
-  return 'https://www.pornhub.com/embed/' + id + '?autoplay=1';
-}
-
-function svBilibiliEmbedUrl(bvid) {
-  const id = encodeURIComponent(String(bvid || '').trim());
-  return 'https://player.bilibili.com/player.html?bvid=' + id +
-    '&page=1&high_quality=1&danmaku=0&autoplay=1';
-}
-
-function svPlatformLabel(platform) {
-  if (platform === 'bilibili') return 'B站';
-  if (platform === 'youtube') return 'YouTube';
-  if (platform === 'pornhub') return 'Pornhub';
-  return '内嵌';
-}
+/* —— DOM / 样式 —— */
 
 function svEnsureStyle() {
   let style = document.getElementById(SV_STYLE_ID);
@@ -205,7 +319,7 @@ function svEnsureStyle() {
     document.head.appendChild(style);
   }
   ['eight-tail-sv-style', 'eight-tail-sv-style-v4', 'eight-tail-sv-style-v5',
-    'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7'].forEach(function (id) {
+    'eight-tail-sv-style-v6', 'eight-tail-sv-style-v7', 'eight-tail-sv-style-v8'].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
@@ -225,7 +339,7 @@ function svEnsureStyle() {
 #eight-tail-short-video-root, #eight-tail-short-video-root * { pointer-events: auto !important; box-sizing: border-box; }
 #eight-tail-sv-toolbar {
   position: absolute !important; top: 0 !important; left: 0 !important; right: 0 !important;
-  z-index: 30 !important; display: flex !important; justify-content: flex-end !important; gap: 8px !important;
+  z-index: 40 !important; display: flex !important; justify-content: flex-end !important; gap: 8px !important;
   padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px 12px !important;
   background: linear-gradient(180deg, rgba(0,0,0,.55), transparent) !important;
 }
@@ -233,11 +347,12 @@ function svEnsureStyle() {
   width: 44px !important; height: 44px !important; border: 0 !important; border-radius: 50% !important;
   background: rgba(239, 68, 68, .92) !important; color: #fff !important; font-size: 26px !important;
   font-weight: 700 !important; display: flex !important; align-items: center !important;
-  justify-content: center !important; cursor: pointer !important; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  justify-content: center !important; cursor: pointer !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.4);
 }
 #eight-tail-sv-apps {
   position: absolute !important; top: max(56px, calc(env(safe-area-inset-top) + 48px)) !important;
-  left: 10px !important; right: 10px !important; z-index: 25 !important;
+  left: 10px !important; right: 10px !important; z-index: 35 !important;
   display: flex !important; gap: 8px !important; overflow-x: auto !important; scrollbar-width: none;
   padding: 4px 2px 8px !important;
 }
@@ -253,7 +368,6 @@ function svEnsureStyle() {
   font-size: 20px; background: linear-gradient(160deg, rgba(255,255,255,.22), rgba(255,255,255,.06));
 }
 .etc-sv-app .name { font-size: 10px; font-weight: 700; }
-.etc-sv-app[data-app="bilibili"] .emoji { background: linear-gradient(160deg, #ff8fab, #fb7299); }
 .etc-sv-app[data-app="youtube"] .emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
 .etc-sv-app[data-app="pornhub"] .emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
 .etc-sv-app[data-app="douyin"] .emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
@@ -274,6 +388,52 @@ function svEnsureStyle() {
 }
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-video { display: none !important; }
 #eight-tail-short-video-root.mode-embed #eight-tail-sv-embed { display: block !important; }
+#eight-tail-short-video-root.browse-open #eight-tail-sv-embed,
+#eight-tail-short-video-root.browse-open #eight-tail-sv-video { display: none !important; }
+#eight-tail-sv-browse {
+  display: none !important; position: absolute !important; inset: 0 !important; z-index: 6 !important;
+  overflow-y: auto !important; -webkit-overflow-scrolling: touch !important;
+  padding: 8px 12px 80px !important; background: rgba(8,8,12,.96) !important;
+  touch-action: pan-y !important;
+}
+#eight-tail-short-video-root.browse-open #eight-tail-sv-browse { display: block !important; }
+#eight-tail-sv-browse-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 10px; font-size: 13px; font-weight: 700;
+}
+#eight-tail-sv-browse-refresh {
+  border: 0; border-radius: 10px; padding: 8px 12px; font-size: 12px; font-weight: 700;
+  background: rgba(255,255,255,.14); color: #fff; cursor: pointer;
+}
+#eight-tail-sv-cards {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+}
+@media (min-width: 720px) {
+  #eight-tail-sv-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.etc-sv-card {
+  border: 0; border-radius: 14px; overflow: hidden; padding: 0; text-align: left;
+  background: rgba(255,255,255,.08); color: #fff; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35); touch-action: manipulation;
+}
+.etc-sv-card:active { transform: scale(0.98); }
+.etc-sv-card-thumb {
+  position: relative; width: 100%; aspect-ratio: 16/10; background: #1a1a1a; overflow: hidden;
+}
+.etc-sv-card-thumb img {
+  width: 100%; height: 100%; object-fit: cover; display: block; border: 0;
+  referrerpolicy: no-referrer;
+}
+.etc-sv-card-dur {
+  position: absolute; right: 6px; bottom: 6px; font-size: 10px; font-weight: 700;
+  background: rgba(0,0,0,.7); padding: 2px 6px; border-radius: 6px;
+}
+.etc-sv-card-body { padding: 8px 9px 10px; }
+.etc-sv-card-title {
+  font-size: 12px; font-weight: 650; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.etc-sv-card-src { font-size: 10px; opacity: .55; margin-top: 4px; }
 #eight-tail-sv-hint {
   position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); z-index: 8;
   font-size: 14px; opacity: 0; pointer-events: none !important; transition: opacity .18s;
@@ -286,12 +446,12 @@ function svEnsureStyle() {
   z-index: 12 !important; display: flex !important; flex-direction: column !important;
   align-items: center !important; gap: 14px !important;
 }
+#eight-tail-short-video-root.browse-open #eight-tail-sv-rail { display: none !important; }
 .etc-sv-rail-btn {
   width: 52px !important; min-height: 52px !important; border: 0 !important; border-radius: 50% !important;
   background: rgba(0,0,0,.45) !important; color: #fff !important; display: flex !important;
   flex-direction: column !important; align-items: center !important; justify-content: center !important;
   gap: 2px !important; font-size: 11px !important; cursor: pointer !important; padding: 6px 0 !important;
-  backdrop-filter: blur(6px);
 }
 .etc-sv-rail-btn .ico { font-size: 20px; line-height: 1; }
 .etc-sv-rail-btn.is-on { color: #ff4d6d; }
@@ -299,11 +459,15 @@ function svEnsureStyle() {
   background: linear-gradient(145deg, #5b8def, #3d6fd8) !important;
   width: 56px !important; min-height: 56px !important; font-weight: 800 !important;
 }
+#eight-tail-sv-list-btn {
+  background: linear-gradient(145deg, #ff9900, #e67e00) !important;
+}
 #eight-tail-sv-meta {
   position: absolute; left: 14px; right: 78px;
   bottom: max(72px, calc(12% + env(safe-area-inset-bottom)));
   z-index: 10; pointer-events: none !important; text-shadow: 0 1px 4px rgba(0,0,0,.75);
 }
+#eight-tail-short-video-root.browse-open #eight-tail-sv-meta { display: none !important; }
 #eight-tail-sv-author { font-weight: 700; font-size: 15px; margin-bottom: 6px; }
 #eight-tail-sv-title { font-size: 13px; opacity: .92; line-height: 1.4; }
 #eight-tail-sv-status-bar {
@@ -312,23 +476,18 @@ function svEnsureStyle() {
   font-size: 11px !important; opacity: .7 !important; pointer-events: none !important;
   text-align: center !important;
 }
-/* 彻底隐藏旧换源面板 */
-#video-source-panel, #eight-tail-sv-panel, #eight-tail-sv-gear { display: none !important; }
+#eight-tail-short-video-root.browse-open #eight-tail-sv-status-bar { display: none !important; }
 `;
 }
 
 function svForceRootCss(root) {
   if (!root) return;
-  root.style.setProperty('position', 'fixed', 'important');
-  root.style.setProperty('inset', '0', 'important');
-  root.style.setProperty('width', '100vw', 'important');
-  root.style.setProperty('height', '100dvh', 'important');
-  root.style.setProperty('background', '#000', 'important');
-  root.style.setProperty('z-index', '100002', 'important');
-  root.style.setProperty('display', 'flex', 'important');
-  root.style.setProperty('flex-direction', 'column', 'important');
-  root.style.setProperty('overflow', 'hidden', 'important');
-  root.style.setProperty('pointer-events', 'auto', 'important');
+  ['position:fixed', 'inset:0', 'width:100vw', 'height:100dvh', 'background:#000',
+    'z-index:100002', 'display:flex', 'flex-direction:column', 'overflow:hidden',
+    'pointer-events:auto'].forEach(function (pair) {
+    const p = pair.split(':');
+    try { root.style.setProperty(p[0], p[1], 'important'); } catch (_) {}
+  });
 }
 
 function svGetRoot() {
@@ -336,9 +495,10 @@ function svGetRoot() {
 }
 
 function svBuildDom() {
+  svEnsureNoReferrerMeta();
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '8') {
+  if (root && root.dataset.svVersion === '9') {
     svForceRootCss(root);
     return root;
   }
@@ -348,7 +508,7 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '8';
+  root.dataset.svVersion = '9';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', '短视频流');
   root.setAttribute('aria-hidden', 'true');
@@ -357,7 +517,6 @@ function svBuildDom() {
     '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭">×</button>',
     '</div>',
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
-    '  <button type="button" class="etc-sv-app" data-app="bilibili"><span class="emoji">📺</span><span class="name">B站</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="pornhub"><span class="emoji">🔥</span><span class="name">Pornhub</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="douyin" data-action="external" data-scheme="snssdk1128://feed" data-web="https://www.douyin.com/"><span class="emoji">🎵</span><span class="name">抖音</span></button>',
@@ -365,11 +524,22 @@ function svBuildDom() {
     '</div>',
     '<div id="eight-tail-sv-stage">',
     '  <video id="eight-tail-sv-video" muted autoplay loop playsinline webkit-playsinline preload="auto"></video>',
-    '  <iframe id="eight-tail-sv-embed" title="内嵌播放器" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen scrolling="no" referrerpolicy="no-referrer-when-downgrade"></iframe>',
+    '  <iframe id="eight-tail-sv-embed" title="内嵌播放器" scrolling="no" frameborder="0" allowfullscreen="true"',
+    '    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"',
+    '    sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"',
+    '    referrerpolicy="no-referrer"></iframe>',
+    '  <div id="eight-tail-sv-browse" aria-label="成人片源列表">',
+    '    <div id="eight-tail-sv-browse-head">',
+    '      <span id="eight-tail-sv-browse-title">热门片源</span>',
+    '      <button type="button" id="eight-tail-sv-browse-refresh">刷新</button>',
+    '    </div>',
+    '    <div id="eight-tail-sv-cards"></div>',
+    '  </div>',
     '  <div id="eight-tail-sv-hint">暂停</div>',
     '  <div id="eight-tail-sv-rail">',
     '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-like"><span class="ico">♡</span><span class="n">赞</span></button>',
     '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-mute"><span class="ico">🔇</span><span class="n">静音</span></button>',
+    '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-list-btn" title="返回列表"><span class="ico">☰</span><span class="n">列表</span></button>',
     '    <button type="button" class="etc-sv-rail-btn" id="eight-tail-sv-next" title="换一个 / 下一条"><span class="ico">⏭</span><span class="n">下一条</span></button>',
     '  </div>',
     '  <div id="eight-tail-sv-meta">',
@@ -393,10 +563,15 @@ function svEls(root) {
     root: root,
     video: root.querySelector('#eight-tail-sv-video'),
     embed: root.querySelector('#eight-tail-sv-embed'),
+    browse: root.querySelector('#eight-tail-sv-browse'),
+    cards: root.querySelector('#eight-tail-sv-cards'),
+    browseTitle: root.querySelector('#eight-tail-sv-browse-title'),
+    browseRefresh: root.querySelector('#eight-tail-sv-browse-refresh'),
     hint: root.querySelector('#eight-tail-sv-hint'),
     like: root.querySelector('#eight-tail-sv-like'),
     mute: root.querySelector('#eight-tail-sv-mute'),
     next: root.querySelector('#eight-tail-sv-next'),
+    listBtn: root.querySelector('#eight-tail-sv-list-btn'),
     author: root.querySelector('#eight-tail-sv-author'),
     title: root.querySelector('#eight-tail-sv-title'),
     close: root.querySelector('#eight-tail-sv-close'),
@@ -445,26 +620,28 @@ function svCurrent() {
   return feed[i];
 }
 
+function svSetBrowseOpen(on) {
+  svState.browseOpen = !!on;
+  const root = svGetRoot();
+  if (root) root.classList.toggle('browse-open', svState.browseOpen);
+}
+
 function svUpdateChrome() {
   const item = svCurrent();
   const els = svEls();
   if (!els.root) return;
 
   if (svState.mode === 'youtube') {
-    const pl = SV_YT_PLAYLISTS[svState.ytListIndex] || SV_YT_PLAYLISTS[0];
-    if (els.author) els.author.textContent = '@YouTube';
-    if (els.title) els.title.textContent = (pl && pl.title ? pl.title : 'Shorts 流') +
-      (pl && pl.id ? ' · ' + pl.id.slice(0, 10) + '…' : '');
-  } else if (svState.mode === 'pornhub') {
-    if (els.author) els.author.textContent = '@Pornhub';
+    const yt = SV_YT_SHORTS[svState.ytIndex] || SV_YT_SHORTS[0];
+    if (els.author) els.author.textContent = '@YouTube Shorts';
     if (els.title) {
-      els.title.textContent = '热门流 · ' + (svState.phIndex + 1) + '/' +
-        Math.max(1, (svState.phKeys || []).length) +
-        (svState.embedId ? ' · ' + svState.embedId : '');
+      els.title.textContent = (yt ? yt.title : 'Shorts') +
+        ' · ' + (svState.ytIndex + 1) + '/' + SV_YT_SHORTS.length;
     }
-  } else if (svState.mode === 'bilibili') {
-    if (els.author) els.author.textContent = '@B站';
-    if (els.title) els.title.textContent = svState.embedId ? ('B站视频 · ' + svState.embedId) : 'B站视频';
+  } else if (svState.mode === 'adult') {
+    const a = svState.adultList[svState.adultIndex];
+    if (els.author) els.author.textContent = '@' + ((a && a.source) === 'eporner' ? 'Eporner' : 'Pornhub');
+    if (els.title) els.title.textContent = a ? a.title : '成人片源';
   } else if (item) {
     if (els.author) els.author.textContent = item.author || '@sample';
     if (els.title) els.title.textContent = item.title || '';
@@ -489,10 +666,10 @@ function svUpdateChrome() {
   }
   if (els.next) {
     const n = els.next.querySelector('.n');
-    if (n) {
-      n.textContent = svState.mode === 'youtube' ? '换列表' :
-        (svState.mode === 'pornhub' ? '下一条' : '下一条');
-    }
+    if (n) n.textContent = svState.mode === 'youtube' ? '换一个' : '下一条';
+  }
+  if (els.listBtn) {
+    els.listBtn.style.display = svState.mode === 'adult' ? '' : 'none';
   }
 }
 
@@ -504,7 +681,7 @@ function svClearEmbedFrame() {
     els.embed.style.display = 'none';
   }
   if (els.root) {
-    els.root.classList.remove('mode-embed', 'mode-bilibili', 'mode-youtube', 'mode-pornhub');
+    els.root.classList.remove('mode-embed', 'mode-youtube', 'mode-adult', 'mode-pornhub', 'mode-bilibili');
   }
 }
 
@@ -516,26 +693,36 @@ function svPauseNativeVideo() {
   els.video.style.display = 'none';
 }
 
+function svConfigureEmbedEl(embed) {
+  if (!embed) return;
+  embed.setAttribute('scrolling', 'no');
+  embed.setAttribute('frameborder', '0');
+  embed.setAttribute('allowfullscreen', 'true');
+  embed.setAttribute('allow', 'autoplay; fullscreen; encrypted-media; picture-in-picture');
+  embed.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-presentation');
+  embed.setAttribute('referrerpolicy', 'no-referrer');
+  embed.style.width = '100%';
+  embed.style.height = '100%';
+  embed.style.border = 'none';
+}
+
 function svSetEmbedSrc(url, platform, id) {
   const els = svEls();
   const root = els.root;
   if (!els.embed || !root) return false;
   svPauseNativeVideo();
+  svSetBrowseOpen(false);
   try { els.embed.src = 'about:blank'; } catch (_) {}
 
   svState.mode = platform;
   svState.embedId = String(id || '').trim();
-  svState.lastEmbed = { mode: platform, id: svState.embedId };
-  svWriteMode(platform);
-  if (platform === 'bilibili') svWriteEmbedId(svState.embedId);
+  svWriteMode(platform === 'adult' ? 'adult' : platform);
 
-  root.classList.remove('mode-bilibili', 'mode-youtube', 'mode-pornhub');
-  root.classList.add('mode-embed', 'mode-' + platform);
+  root.classList.remove('mode-youtube', 'mode-adult', 'mode-pornhub', 'mode-bilibili');
+  root.classList.add('mode-embed', 'mode-' + (platform === 'adult' ? 'adult' : platform));
+  svConfigureEmbedEl(els.embed);
   els.embed.style.display = 'block';
-  els.embed.style.width = '100%';
-  els.embed.style.height = '100%';
-  els.embed.style.border = 'none';
-  els.embed.title = svPlatformLabel(platform) + ' 播放器';
+  els.embed.title = platform === 'youtube' ? 'YouTube' : '内嵌播放器';
   els.embed.src = url;
   svUpdateChrome();
   return true;
@@ -545,6 +732,7 @@ function svSwitchToNativeMode() {
   svState.mode = 'native';
   svWriteMode('native');
   svClearEmbedFrame();
+  svSetBrowseOpen(false);
   const els = svEls();
   if (els.video) els.video.style.display = 'block';
   svMarkAppActive('');
@@ -558,8 +746,6 @@ function svPrepareVideoEl(v) {
   v.autoplay = true;
   v.loop = true;
   v.playsInline = true;
-  v.setAttribute('muted', '');
-  v.setAttribute('playsinline', '');
 }
 
 function svTryPlay(v) {
@@ -567,9 +753,7 @@ function svTryPlay(v) {
   v.muted = true;
   svState.muted = true;
   const p = v.play();
-  if (p && typeof p.catch === 'function') {
-    p.catch(function () { svSetStatus('点屏幕播放'); });
-  }
+  if (p && typeof p.catch === 'function') p.catch(function () {});
 }
 
 function svPlayCurrent() {
@@ -589,199 +773,142 @@ function svPlayCurrent() {
   svSetStatus((svState.index + 1) + ' / ' + svState.feed.length + ' · 上下滑切内置片');
 }
 
-/* —— YouTube 自动刷流 —— */
+/* —— YouTube Shorts —— */
 
-function svLoadYoutubePlaylist(listIndex, opts) {
-  opts = opts || {};
-  const list = SV_YT_PLAYLISTS;
-  if (!list.length) return false;
-  let idx = typeof listIndex === 'number' ? listIndex : svState.ytListIndex;
-  idx = ((idx % list.length) + list.length) % list.length;
-  svState.ytListIndex = idx;
-  const pl = list[idx];
-  try { localStorage.setItem(SV_YT_LIST_LS_KEY, pl.id); } catch (_) {}
+function svPlayYoutubeAt(index) {
+  const list = SV_YT_SHORTS;
+  if (!list.length) return;
+  const i = ((index % list.length) + list.length) % list.length;
+  svState.ytIndex = i;
+  try { localStorage.setItem(SV_YT_IDX_LS_KEY, String(i)); } catch (_) {}
+  const yt = list[i];
   svMarkAppActive('youtube');
-  svSetEmbedSrc(svYoutubePlaylistUrl(pl.id), 'youtube', pl.id);
-  svShowHint(opts.hint || 'YouTube 短视频流');
-  svSetStatus('YouTube · ' + pl.title + ' · 点「换列表」或上滑切换');
-  return true;
+  svSetEmbedSrc(svYoutubeEmbedUrl(yt.id), 'youtube', yt.id);
+  svShowHint('Shorts ' + (i + 1) + '/' + list.length);
+  svSetStatus('YouTube Shorts · 点「换一个」或上滑切换');
 }
 
 function svOpenYoutubeFeed() {
   let start = 0;
   try {
-    const saved = localStorage.getItem(SV_YT_LIST_LS_KEY);
-    if (saved) {
-      const i = SV_YT_PLAYLISTS.findIndex(function (p) { return p.id === saved; });
-      if (i >= 0) start = i;
-    }
+    const n = parseInt(localStorage.getItem(SV_YT_IDX_LS_KEY) || '0', 10);
+    if (!isNaN(n)) start = n;
   } catch (_) {}
-  svLoadYoutubePlaylist(start);
+  svPlayYoutubeAt(start);
 }
 
-function svNextYoutubePlaylist() {
-  let next = svState.ytListIndex + 1;
-  if (Math.random() > 0.55) {
-    next = Math.floor(Math.random() * SV_YT_PLAYLISTS.length);
+function svNextYoutube() {
+  let next = svState.ytIndex + 1;
+  if (Math.random() > 0.5 && SV_YT_SHORTS.length > 2) {
+    next = Math.floor(Math.random() * SV_YT_SHORTS.length);
   }
-  if (next === svState.ytListIndex && SV_YT_PLAYLISTS.length > 1) {
-    next = (svState.ytListIndex + 1) % SV_YT_PLAYLISTS.length;
-  }
-  svLoadYoutubePlaylist(next, { hint: '换一个列表' });
+  if (next === svState.ytIndex) next = svState.ytIndex + 1;
+  svPlayYoutubeAt(next);
 }
 
-/* —— Pornhub 自动刷流 —— */
+/* —— 成人片源：卡片列表 —— */
 
-function svExtractPhKeysFromJson(data) {
-  const keys = [];
-  const seen = Object.create(null);
-  function push(k) {
-    const id = String(k || '').trim();
-    if (!id || seen[id]) return;
-    seen[id] = 1;
-    keys.push(id);
+function svRenderAdultCards(list) {
+  const els = svEls();
+  if (!els.cards) return;
+  els.cards.innerHTML = '';
+  if (!list || !list.length) {
+    els.cards.innerHTML = '<div style="grid-column:1/-1;opacity:.7;padding:24px;text-align:center;font-size:13px;">暂无结果，请点刷新重试</div>';
+    return;
   }
-  let videos = [];
-  if (!data) return keys;
-  if (Array.isArray(data)) videos = data;
-  else if (Array.isArray(data.videos)) videos = data.videos;
-  else if (data.videos && Array.isArray(data.videos.video)) videos = data.videos.video;
-  else if (Array.isArray(data.data)) videos = data.data;
-
-  for (let i = 0; i < videos.length; i++) {
-    const v = videos[i] || {};
-    if (v.video_id) push(v.video_id);
-    if (v.vkey) push(v.vkey);
-    if (v.viewkey) push(v.viewkey);
-    if (v.url) {
-      const m = String(v.url).match(/[?&]viewkey=([^&#]+)/i);
-      if (m) push(decodeURIComponent(m[1]));
-    }
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'etc-sv-card';
+    btn.dataset.index = String(i);
+    btn.innerHTML =
+      '<div class="etc-sv-card-thumb">' +
+        (item.thumb
+          ? '<img src="' + String(item.thumb).replace(/"/g, '&quot;') + '" alt="" loading="lazy" referrerpolicy="no-referrer" />'
+          : '') +
+        '<span class="etc-sv-card-dur">' + (item.duration || '') + '</span>' +
+      '</div>' +
+      '<div class="etc-sv-card-body">' +
+        '<div class="etc-sv-card-title"></div>' +
+        '<div class="etc-sv-card-src"></div>' +
+      '</div>';
+    const titleEl = btn.querySelector('.etc-sv-card-title');
+    const srcEl = btn.querySelector('.etc-sv-card-src');
+    if (titleEl) titleEl.textContent = item.title || '视频';
+    if (srcEl) srcEl.textContent = (item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 点播';
+    els.cards.appendChild(btn);
   }
-  return keys;
 }
 
-async function svFetchPornhubKeys() {
-  const urls = [
-    SV_PH_API,
-    'https://www.pornhub.com/webmasters/search?ordering=mostviewed&period=monthly',
-    'https://www.pornhub.com/webmasters/search?category=video&ordering=newest',
-  ];
-  for (let u = 0; u < urls.length; u++) {
-    try {
-      const res = await fetch(urls[u], {
-        method: 'GET',
-        credentials: 'omit',
-        cache: 'no-store',
-        mode: 'cors',
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      const keys = svExtractPhKeysFromJson(data);
-      if (keys.length) return keys;
-    } catch (_) {}
-  }
-  console.warn('[EightTailCat] Pornhub API 受跨域限制，使用内置热门兜底');
-  return SV_PH_FALLBACK_KEYS.slice();
-}
-
-function svPlayPornhubAt(index) {
-  const keys = svState.phKeys || [];
-  if (!keys.length) {
-    svState.phKeys = SV_PH_FALLBACK_KEYS.slice();
-  }
-  const list = svState.phKeys;
+function svPlayAdultAt(index) {
+  const list = svState.adultList || [];
+  if (!list.length) return;
   const i = ((index % list.length) + list.length) % list.length;
-  svState.phIndex = i;
-  const key = list[i];
+  svState.adultIndex = i;
+  const item = list[i];
   svMarkAppActive('pornhub');
-  svSetEmbedSrc(svPornhubEmbedUrl(key), 'pornhub', key);
-  svShowHint('Pornhub ' + (i + 1) + '/' + list.length);
-  svSetStatus('Pornhub · 上下滑或点「下一条」切片');
+  svSetEmbedSrc(item.embedUrl, 'adult', item.id);
+  svShowHint((i + 1) + '/' + list.length);
+  svSetStatus((item.source === 'eporner' ? 'Eporner' : 'Pornhub') + ' · 上下滑切 · 列表可返回');
 }
 
-async function svOpenPornhubFeed() {
-  if (svState.phLoading) {
+async function svOpenAdultBrowse(forceReload) {
+  if (svState.adultLoading) {
     svShowHint('加载中…');
     return;
   }
-  svState.phLoading = true;
   svMarkAppActive('pornhub');
-  svShowHint('拉取热门…');
-  svSetStatus('正在请求 Pornhub 公开接口…');
+  svSetBrowseOpen(true);
+  svPauseNativeVideo();
+  svClearEmbedFrame();
+  svState.mode = 'adult';
+  svWriteMode('adult');
+
+  const els = svEls();
+  if (els.browseTitle) els.browseTitle.textContent = '热门片源加载中…';
+  if (!forceReload && svState.adultList.length) {
+    if (els.browseTitle) els.browseTitle.textContent = '热门片源 · ' + svState.adultList.length;
+    svRenderAdultCards(svState.adultList);
+    svShowHint('选择影片');
+    return;
+  }
+
+  svState.adultLoading = true;
+  svShowHint('代理拉取中…');
+  svSetStatus('三重代理穿透 · Eporner / Pornhub');
   try {
-    const keys = await svFetchPornhubKeys();
-    svState.phKeys = keys.length ? keys : SV_PH_FALLBACK_KEYS.slice();
-    svState.phIndex = 0;
-    svPlayPornhubAt(0);
+    const list = await svLoadAdultCatalog();
+    svState.adultList = list;
+    svState.adultIndex = 0;
+    if (els.browseTitle) {
+      els.browseTitle.textContent = list.length
+        ? ('热门片源 · ' + list.length + ' 部')
+        : '暂无结果';
+    }
+    svRenderAdultCards(list);
+    svShowHint(list.length ? '点封面播放' : '无结果');
+  } catch (err) {
+    console.warn(err);
+    svShowHint('拉取失败');
+    if (els.browseTitle) els.browseTitle.textContent = '拉取失败，请刷新';
+    svRenderAdultCards([]);
   } finally {
-    svState.phLoading = false;
+    svState.adultLoading = false;
   }
 }
 
-function svNextPornhub(delta) {
-  const d = delta == null ? 1 : delta;
-  svPlayPornhubAt(svState.phIndex + d);
-}
-
-/* —— B站轻量入口 —— */
-
-function svOpenBilibiliEntry() {
-  const saved = svGetSavedBilibiliId();
-  if (saved) {
-    svMarkAppActive('bilibili');
-    svSetEmbedSrc(svBilibiliEmbedUrl(saved), 'bilibili', saved);
-    svShowHint('B站播放');
-    svSetStatus('B站 · ' + saved + ' · 长按 B站图标可更换 BV');
-    return;
-  }
-  const input = window.prompt('请输入 B 站视频链接或 BV 号（如 BV1xx411c7mD）', '');
-  if (!input) return;
-  const bv = svExtractBvId(input);
-  if (!bv || svIsDeadBvid(bv)) {
-    svShowHint('未识别有效 BV');
-    return;
-  }
-  svWriteEmbedId(bv);
-  svMarkAppActive('bilibili');
-  svSetEmbedSrc(svBilibiliEmbedUrl(bv), 'bilibili', bv);
-  svShowHint('B站播放');
-  svSetStatus('B站 · ' + bv);
-}
-
-function svClearOrChangeBilibili() {
-  svWriteEmbedId('');
-  try { localStorage.removeItem(SV_BV_LS_KEY_LEGACY); } catch (_) {}
-  if (svState.mode === 'bilibili') {
-    svSwitchToNativeMode();
-    svPlayCurrent();
-  }
-  const input = window.prompt('清空完成。请输入新的 B 站链接或 BV 号：', '');
-  if (!input) return;
-  const bv = svExtractBvId(input);
-  if (!bv || svIsDeadBvid(bv)) {
-    svShowHint('未识别有效 BV');
-    return;
-  }
-  svWriteEmbedId(bv);
-  svMarkAppActive('bilibili');
-  svSetEmbedSrc(svBilibiliEmbedUrl(bv), 'bilibili', bv);
-}
-
-/* —— 外链 App —— */
+/* —— 外链 —— */
 
 function svLaunchExternalApp(opts) {
   opts = opts || {};
   const scheme = String(opts.scheme || '').trim();
   const web = String(opts.web || '').trim();
-  const name = String(opts.name || '应用');
   let opened = false;
-
   function openWeb() {
     if (!web) return;
     try { window.open(web, '_blank', 'noopener,noreferrer'); opened = true; } catch (_) {}
   }
-
   if (scheme) {
     const start = Date.now();
     let t = null;
@@ -810,14 +937,13 @@ function svLaunchExternalApp(opts) {
   } else {
     openWeb();
   }
-  svShowHint('正在打开 ' + name);
+  svShowHint('正在打开 ' + (opts.name || '应用'));
 }
 
 function svOnAppDockClick(btn) {
   if (!btn || !svClicksArmed()) return;
   const app = btn.getAttribute('data-app') || '';
   const action = btn.getAttribute('data-action') || '';
-
   if (action === 'external' || app === 'douyin' || app === 'xiaohongshu') {
     svLaunchExternalApp({
       name: app === 'douyin' ? '抖音' : '小红书',
@@ -826,33 +952,24 @@ function svOnAppDockClick(btn) {
     });
     return;
   }
-  if (app === 'bilibili') {
-    svOpenBilibiliEntry();
-    return;
-  }
   if (app === 'youtube') {
     svOpenYoutubeFeed();
     return;
   }
   if (app === 'pornhub') {
-    svOpenPornhubFeed();
+    svOpenAdultBrowse(true);
   }
 }
 
-/* —— 下一条 / 滑动 —— */
-
 function svGo(delta) {
+  if (svState.browseOpen) return;
   if (svState.mode === 'youtube') {
-    if (delta > 0) svNextYoutubePlaylist();
-    else svLoadYoutubePlaylist(svState.ytListIndex - 1, { hint: '上一个列表' });
+    if (delta > 0) svNextYoutube();
+    else svPlayYoutubeAt(svState.ytIndex - 1);
     return;
   }
-  if (svState.mode === 'pornhub') {
-    svNextPornhub(delta > 0 ? 1 : -1);
-    return;
-  }
-  if (svState.mode === 'bilibili') {
-    svShowHint('B站请点图标更换 BV');
+  if (svState.mode === 'adult') {
+    svPlayAdultAt(svState.adultIndex + (delta > 0 ? 1 : -1));
     return;
   }
   const feed = svState.feed || [];
@@ -869,11 +986,12 @@ function svGo(delta) {
 function svOnNextClick() {
   if (!svClicksArmed()) return;
   if (svState.mode === 'youtube') {
-    svNextYoutubePlaylist();
+    svNextYoutube();
     return;
   }
-  if (svState.mode === 'pornhub') {
-    svNextPornhub(1);
+  if (svState.mode === 'adult') {
+    if (svState.browseOpen) return;
+    svPlayAdultAt(svState.adultIndex + 1);
     return;
   }
   svGo(1);
@@ -894,14 +1012,10 @@ function svToggleMute() {
     }
   }
   svUpdateChrome();
-  svShowHint(svState.muted ? '已静音' : '已开声音');
 }
 
 function svTogglePlay() {
-  if (svIsEmbedMode(svState.mode)) {
-    svShowHint('请点播放器控制');
-    return;
-  }
+  if (svIsEmbedMode(svState.mode) || svState.browseOpen) return;
   const v = svEls().video;
   if (!v) return;
   if (v.paused) {
@@ -930,8 +1044,8 @@ function svIsInteractiveTarget(el) {
     el.closest('#eight-tail-sv-toolbar') ||
     el.closest('#eight-tail-sv-apps') ||
     el.closest('#eight-tail-sv-rail') ||
+    el.closest('#eight-tail-sv-browse') ||
     el.closest('button') ||
-    el.closest('input') ||
     el.closest('a')
   );
 }
@@ -973,29 +1087,38 @@ function svBindUi(root) {
       svOnNextClick();
     });
   }
+  if (els.listBtn) {
+    els.listBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svClearEmbedFrame();
+      svOpenAdultBrowse(false);
+    });
+  }
+  if (els.browseRefresh) {
+    els.browseRefresh.addEventListener('click', function (e) {
+      e.preventDefault();
+      stopBubble(e);
+      svOpenAdultBrowse(true);
+    });
+  }
+  if (els.cards) {
+    els.cards.addEventListener('click', function (e) {
+      const card = e.target && e.target.closest ? e.target.closest('.etc-sv-card') : null;
+      if (!card) return;
+      e.preventDefault();
+      stopBubble(e);
+      const idx = parseInt(card.dataset.index || '0', 10) || 0;
+      svPlayAdultAt(idx);
+    });
+  }
   if (els.apps) {
     els.apps.addEventListener('click', function (e) {
       const btn = e.target && e.target.closest ? e.target.closest('.etc-sv-app') : null;
       if (!btn) return;
       e.preventDefault();
       stopBubble(e);
-      /* 长按 B站 = 更换 BV：用 double-tap 时间差简化，改用 data：按住 0.7s */
       svOnAppDockClick(btn);
-    });
-    /* B站长按更换 */
-    let biliHold = null;
-    els.apps.addEventListener('pointerdown', function (e) {
-      const btn = e.target && e.target.closest ? e.target.closest('.etc-sv-app[data-app="bilibili"]') : null;
-      if (!btn) return;
-      biliHold = setTimeout(function () {
-        biliHold = null;
-        svClearOrChangeBilibili();
-      }, 700);
-    });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
-      els.apps.addEventListener(ev, function () {
-        if (biliHold) { clearTimeout(biliHold); biliHold = null; }
-      });
     });
   }
 
@@ -1011,6 +1134,7 @@ function svBindUi(root) {
 
     stage.addEventListener('touchmove', function (e) {
       if (svIsInteractiveTarget(e.target)) return;
+      if (svState.browseOpen) return;
       if (!e.touches || !e.touches.length) return;
       const dy = e.touches[0].clientY - svState.startY;
       const dx = e.touches[0].clientX - svState.startX;
@@ -1022,6 +1146,7 @@ function svBindUi(root) {
 
     stage.addEventListener('touchend', function (e) {
       if (svIsInteractiveTarget(e.target)) return;
+      if (svState.browseOpen) return;
       const t = (e.changedTouches && e.changedTouches[0]) || null;
       if (!t) return;
       const dy = t.clientY - svState.startY;
@@ -1039,7 +1164,7 @@ function svBindUi(root) {
 
     stage.addEventListener('click', function (e) {
       if (svIsInteractiveTarget(e.target)) return;
-      if (svIsEmbedMode(svState.mode)) return;
+      if (svIsEmbedMode(svState.mode) || svState.browseOpen) return;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1047,7 +1172,7 @@ function svBindUi(root) {
     });
 
     stage.addEventListener('wheel', function (e) {
-      if (!svState.open) return;
+      if (!svState.open || svState.browseOpen) return;
       if (svIsInteractiveTarget(e.target)) return;
       e.preventDefault();
       if (e.deltaY > 24) svGo(1);
@@ -1062,7 +1187,15 @@ function svBindUi(root) {
 }
 
 export async function openShortVideoPlayer() {
-  svPurgeDeadBvidStorage();
+  svEnsureNoReferrerMeta();
+  /* 清理旧 B站 模式 */
+  try {
+    if (localStorage.getItem(SV_MODE_LS_KEY) === 'bilibili') {
+      localStorage.setItem(SV_MODE_LS_KEY, 'native');
+    }
+    localStorage.removeItem('eight_tail_short_video_bvid');
+  } catch (_) {}
+
   const root = svBuildDom();
   try {
     if (root.parentElement !== document.body) document.body.appendChild(root);
@@ -1083,17 +1216,9 @@ export async function openShortVideoPlayer() {
       svOpenYoutubeFeed();
       return;
     }
-    if (savedMode === 'pornhub') {
-      svOpenPornhubFeed();
+    if (savedMode === 'adult' || savedMode === 'pornhub') {
+      svOpenAdultBrowse(false);
       return;
-    }
-    if (savedMode === 'bilibili') {
-      const bv = svGetSavedBilibiliId();
-      if (bv) {
-        svMarkAppActive('bilibili');
-        svSetEmbedSrc(svBilibiliEmbedUrl(bv), 'bilibili', bv);
-        return;
-      }
     }
     svState.feed = SV_BUILTIN_FEED.slice();
     svState.index = 0;
@@ -1109,12 +1234,11 @@ export function closeShortVideoPlayer() {
     try { els.video.pause(); } catch (_) {}
     try { els.video.muted = true; } catch (_) {}
   }
-  if (svIsEmbedMode(svState.mode) && svState.embedId) {
-    svState.lastEmbed = { mode: svState.mode, id: svState.embedId };
-    if (svState.mode === 'bilibili') svWriteEmbedId(svState.embedId);
+  if (svIsEmbedMode(svState.mode)) {
     svWriteMode(svState.mode);
   }
   svClearEmbedFrame();
+  svSetBrowseOpen(false);
   if (root) {
     root.classList.remove('is-open');
     root.setAttribute('aria-hidden', 'true');
@@ -1138,5 +1262,5 @@ try {
   window.toggleShortVideoPlayer = toggleShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
   window.__etcPlayYoutube = svOpenYoutubeFeed;
-  window.__etcPlayPornhub = svOpenPornhubFeed;
+  window.__etcPlayPornhub = function () { svOpenAdultBrowse(true); };
 } catch (_) {}
