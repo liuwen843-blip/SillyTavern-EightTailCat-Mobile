@@ -6,7 +6,7 @@
  */
 
 const PICA_ROOT_ID = 'picacg-modal-container';
-const PICA_STYLE_ID = 'eight-tail-picacg-style-v2';
+const PICA_STYLE_ID = 'eight-tail-picacg-style-v3';
 const PICA_TOKEN_LS = 'picacg_user_token';
 const PICA_API_BASE = 'https://picaapi.picacomic.com/';
 /* 通用逆向静态密钥（开源客户端通用） */
@@ -275,12 +275,18 @@ function picaEnsureStyle() {
     style.id = PICA_STYLE_ID;
     document.head.appendChild(style);
   }
+  ['eight-tail-picacg-style-v1', 'eight-tail-picacg-style-v2'].forEach(function (id) {
+    try {
+      const n = document.getElementById(id);
+      if (n) n.remove();
+    } catch (_) {}
+  });
   style.textContent = `
 #picacg-modal-container,
 #eight-tail-picacg-root {
   position: fixed !important;
   inset: 0 !important;
-  z-index: 100010 !important;
+  z-index: 100030 !important;
   display: none !important;
   flex-direction: column !important;
   background: #120812 !important;
@@ -299,30 +305,113 @@ function picaEnsureStyle() {
 }
 #picacg-modal-container.is-open,
 #eight-tail-picacg-root.is-open { display: flex !important; }
+
+.picacg-top-bar,
+.picacg-header,
 #pica-topbar {
-  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
-  padding: max(10px, env(safe-area-inset-top)) 12px 10px;
-  background: linear-gradient(180deg, rgba(40,8,24,.96), rgba(24,6,16,.88));
-  border-bottom: 1px solid rgba(255,120,180,.22);
-  z-index: 100 !important;
   position: relative !important;
+  z-index: 100020 !important;
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: max(10px, env(safe-area-inset-top)) 12px 10px !important;
+  background: linear-gradient(180deg, rgba(40,8,24,.98), rgba(24,6,16,.92)) !important;
+  border-bottom: 1px solid rgba(255,120,180,.22) !important;
   pointer-events: auto !important;
   touch-action: manipulation !important;
 }
-#pica-topbar .pica-title { flex: 1; font-size: 15px; font-weight: 800; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#pica-topbar button {
-  border: 0; border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 700;
-  background: rgba(255,255,255,.12); color: #fff; cursor: pointer;
-  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+.picacg-top-bar .pica-title,
+.picacg-header .pica-title,
+#pica-topbar .pica-title {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  pointer-events: none !important;
 }
-#pica-topbar button.primary { background: linear-gradient(135deg, #ff6b9d, #e91e63); }
-#pica-body { flex: 1 1 auto; min-height: 0; overflow: hidden; position: relative; }
+.picacg-top-actions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  gap: 8px !important;
+  align-items: center !important;
+  position: relative !important;
+  z-index: 100021 !important;
+  pointer-events: auto !important;
+}
+.picacg-top-bar button,
+.picacg-header button,
+.picacg-top-bar .action-btn,
+#pica-topbar button,
+.picacg-top-actions button {
+  position: relative !important;
+  z-index: 100021 !important;
+  flex: 0 0 auto !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  border: 0 !important;
+  border-radius: 12px !important;
+  padding: 0 12px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  background: rgba(255,255,255,.14) !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: transparent !important;
+}
+.picacg-top-bar button.primary,
+#pica-topbar button.primary,
+.picacg-top-actions button.primary {
+  background: linear-gradient(135deg, #ff6b9d, #e91e63) !important;
+}
+#pica-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+  z-index: 1 !important;
+}
 .pica-panel {
   position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 14px 14px 28px; display: none;
+  padding: 14px 14px 28px; display: none; z-index: 1;
 }
 .pica-panel.is-on { display: block; }
+.pica-login-overlay {
+  display: none !important;
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 100040 !important;
+  background: rgba(8, 2, 8, 0.72) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  padding: 56px 14px 24px !important;
+  overflow-y: auto !important;
+  pointer-events: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.pica-login-overlay.is-open {
+  display: flex !important;
+}
+.pica-login-sheet {
+  width: min(420px, 100%) !important;
+  margin: 0 auto !important;
+  background: rgba(32, 10, 22, 0.96) !important;
+  border: 1px solid rgba(255,140,180,.28) !important;
+  border-radius: 18px !important;
+  padding: 16px !important;
+  box-shadow: 0 18px 40px rgba(0,0,0,.55) !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 100041 !important;
+}
+.pica-login-sheet h4 { margin: 0 0 10px; font-size: 15px; }
 .pica-card {
   background: rgba(255,255,255,.06); border: 1px solid rgba(255,140,180,.18);
   border-radius: 16px; padding: 14px; margin-bottom: 12px;
@@ -392,7 +481,7 @@ function picaEnsureStyle() {
 }
 .pica-reader {
   position: absolute; inset: 0; display: none; flex-direction: column;
-  background: #000; overflow: hidden;
+  background: #000; overflow: hidden; z-index: 2;
 }
 .pica-reader.is-on { display: flex; }
 .pica-reader-chrome {
@@ -436,7 +525,7 @@ function picaEnsureStyle() {
 function picaBuildDom() {
   picaEnsureStyle();
   let root = picaGetRoot();
-  if (root && root.dataset.picaVersion === '2') return root;
+  if (root && root.dataset.picaVersion === '3') return root;
   if (root) {
     try { root.remove(); } catch (_) {}
   }
@@ -447,35 +536,22 @@ function picaBuildDom() {
   } catch (_) {}
   root = document.createElement('div');
   root.id = PICA_ROOT_ID;
-  root.dataset.picaVersion = '2';
+  root.dataset.picaVersion = '3';
   root.className = 'picacg-modal-container';
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-label', 'PicACG 哔咔漫画');
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = [
-    '<div id="pica-topbar">',
-    '  <button type="button" id="pica-btn-back" title="返回">←</button>',
+    '<div id="pica-topbar" class="picacg-top-bar picacg-header">',
+    '  <button type="button" id="pica-btn-back" class="action-btn" title="返回" aria-label="返回">←</button>',
     '  <div class="pica-title" id="pica-heading">PicACG 哔咔</div>',
-    '  <button type="button" id="pica-btn-account" title="账号">🔑</button>',
-    '  <button type="button" id="pica-btn-close" class="primary" title="关闭">✕</button>',
+    '  <div class="picacg-top-actions">',
+    '    <button type="button" id="pica-btn-account" class="action-btn" title="登录 / Token" aria-label="登录配置">🔑</button>',
+    '    <button type="button" id="pica-btn-close" class="action-btn primary" title="关闭" aria-label="关闭">✕</button>',
+    '  </div>',
     '</div>',
     '<div id="pica-body">',
-    '  <div class="pica-panel" id="pica-panel-login">',
-    '    <div class="pica-card">',
-    '      <h4>🔑 PicACG 登录 / Token</h4>',
-    '      <div class="pica-field"><span>邮箱 / 账号</span><input id="pica-email" type="text" autocomplete="username" placeholder="邮箱或用户名" /></div>',
-    '      <div class="pica-field"><span>密码</span><input id="pica-password" type="password" autocomplete="current-password" placeholder="密码" /></div>',
-    '      <div class="pica-field"><span>或手动粘贴 Token</span><input id="pica-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴已有 Token" /></div>',
-    '      <div class="pica-actions">',
-    '        <button type="button" class="primary" id="pica-btn-login">登录 / 保存</button>',
-    '        <button type="button" id="pica-btn-test">测试连接</button>',
-    '        <button type="button" id="pica-btn-clear">清除 Token</button>',
-    '      </div>',
-    '      <p class="pica-hint">Token 保存于本地浏览器，仅用于向哔咔接口请求章节与漫画切片。</p>',
-    '      <p class="pica-status" id="pica-login-status"></p>',
-    '    </div>',
-    '  </div>',
-    '  <div class="pica-panel" id="pica-panel-browse">',
+    '  <div class="pica-panel is-on" id="pica-panel-browse">',
     '    <div class="pica-search-row">',
     '      <input id="pica-search-input" type="search" enterkeyhint="search" placeholder="关键词搜索漫画…" />',
     '      <button type="button" class="primary" id="pica-btn-search">搜索</button>',
@@ -507,6 +583,22 @@ function picaBuildDom() {
     '    <div class="pica-reader-stream" id="pica-reader-stream"></div>',
     '    <div class="pica-reader-progress" id="pica-reader-progress"><i id="pica-reader-bar"></i></div>',
     '  </div>',
+    '  <div id="pica-login-overlay" class="pica-login-overlay" aria-label="PicACG 登录">',
+    '    <div class="pica-login-sheet" role="dialog">',
+    '      <h4>🔑 PicACG 登录 / Token</h4>',
+    '      <div class="pica-field"><span>邮箱 / 账号</span><input id="pica-email" type="text" autocomplete="username" placeholder="邮箱或用户名" /></div>',
+    '      <div class="pica-field"><span>密码</span><input id="pica-password" type="password" autocomplete="current-password" placeholder="密码" /></div>',
+    '      <div class="pica-field"><span>或手动粘贴 Token</span><input id="pica-token-input" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴已有 Token" /></div>',
+    '      <div class="pica-actions">',
+    '        <button type="button" class="primary" id="pica-btn-login">登录 / 保存</button>',
+    '        <button type="button" id="pica-btn-test">测试连接</button>',
+    '        <button type="button" id="pica-btn-clear">清除 Token</button>',
+    '        <button type="button" id="pica-btn-login-dismiss">关闭</button>',
+    '      </div>',
+    '      <p class="pica-hint">Token 保存于本地浏览器，仅用于向哔咔接口请求章节与漫画切片。</p>',
+    '      <p class="pica-status" id="pica-login-status"></p>',
+    '    </div>',
+    '  </div>',
     '</div>',
   ].join('');
   document.body.appendChild(root);
@@ -523,7 +615,9 @@ function picaEls(root) {
     back: root.querySelector('#pica-btn-back'),
     account: root.querySelector('#pica-btn-account'),
     close: root.querySelector('#pica-btn-close'),
-    panelLogin: root.querySelector('#pica-panel-login'),
+    topbar: root.querySelector('#pica-topbar'),
+    loginOverlay: root.querySelector('#pica-login-overlay'),
+    loginDismiss: root.querySelector('#pica-btn-login-dismiss'),
     panelBrowse: root.querySelector('#pica-panel-browse'),
     panelDetail: root.querySelector('#pica-panel-detail'),
     panelReader: root.querySelector('#pica-panel-reader'),
@@ -569,12 +663,35 @@ function picaShowToast(msg) {
   if (els.loginStatus) picaSetStatus(els.loginStatus, msg);
 }
 
+function picaShowLoginOverlay(on) {
+  const els = picaEls();
+  if (!els.loginOverlay) return;
+  const show = !!on;
+  els.loginOverlay.classList.toggle('is-open', show);
+  if (show) {
+    if (els.tokenInput) {
+      try { els.tokenInput.value = picaGetToken(); } catch (_) {}
+    }
+    picaSetStatus(els.loginStatus, picaGetToken() ? '已保存 Token，可测试或重新登录' : '请登录或粘贴 Token');
+    setTimeout(function () {
+      try {
+        const focusEl = (els.email && !els.email.value) ? els.email : els.tokenInput;
+        if (focusEl) focusEl.focus();
+      } catch (_) {}
+    }, 40);
+  }
+}
+
 function picaSetView(view) {
+  if (view === 'login') {
+    picaShowLoginOverlay(true);
+    return;
+  }
   picaState.view = view;
   const els = picaEls();
   if (!els.root) return;
+  picaShowLoginOverlay(false);
   const map = {
-    login: els.panelLogin,
     browse: els.panelBrowse,
     detail: els.panelDetail,
     reader: els.panelReader,
@@ -586,13 +703,12 @@ function picaSetView(view) {
     else panel.classList.toggle('is-on', view === k);
   });
   const titles = {
-    login: 'PicACG 登录',
     browse: 'PicACG 哔咔',
     detail: '漫画详情',
     reader: picaState.epTitle || '阅读器',
   };
   if (els.heading) els.heading.textContent = titles[view] || 'PicACG';
-  if (els.back) els.back.style.visibility = view === 'browse' || view === 'login' ? 'hidden' : 'visible';
+  if (els.back) els.back.style.visibility = view === 'browse' ? 'hidden' : 'visible';
   if (els.root) {
     els.root.classList.toggle('reader-mode', view === 'reader');
   }
@@ -847,10 +963,6 @@ function picaGoBack() {
   }
   if (picaState.view === 'detail') {
     picaSetView('browse');
-    return;
-  }
-  if (picaState.view === 'login' && (picaState.token || picaGetToken())) {
-    picaSetView('browse');
   }
 }
 
@@ -870,6 +982,29 @@ function picaBindUi(root) {
     }, { passive: true });
   });
 
+  if (els.topbar) {
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup', 'click'].forEach(function (evName) {
+      els.topbar.addEventListener(evName, function (e) {
+        stop(e);
+      }, { passive: true });
+    });
+  }
+  if (els.loginOverlay) {
+    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup', 'click'].forEach(function (evName) {
+      els.loginOverlay.addEventListener(evName, function (e) {
+        stop(e);
+      }, { passive: true });
+    });
+    els.loginOverlay.addEventListener('click', function (e) {
+      if (e.target === els.loginOverlay) {
+        e.preventDefault();
+        stop(e);
+        /* 无 Token 时不允许点遮罩关掉 */
+        if (picaGetToken()) picaShowLoginOverlay(false);
+      }
+    });
+  }
+
   if (els.close) {
     els.close.addEventListener('click', function (e) {
       e.preventDefault(); stop(e); closePicacgApp();
@@ -883,8 +1018,17 @@ function picaBindUi(root) {
   if (els.account) {
     els.account.addEventListener('click', function (e) {
       e.preventDefault(); stop(e);
-      picaSetView('login');
-      if (els.tokenInput) els.tokenInput.value = picaGetToken();
+      picaShowLoginOverlay(true);
+    });
+  }
+  if (els.loginDismiss) {
+    els.loginDismiss.addEventListener('click', function (e) {
+      e.preventDefault(); stop(e);
+      if (!picaGetToken()) {
+        picaSetStatus(els.loginStatus, '请先登录或粘贴 Token');
+        return;
+      }
+      picaShowLoginOverlay(false);
     });
   }
   if (els.btnLogin) {
@@ -899,6 +1043,7 @@ function picaBindUi(root) {
           picaSaveToken(manual);
           picaSetStatus(els.loginStatus, 'Token 已保存');
           picaShowToast('Token 已保存');
+          picaShowLoginOverlay(false);
           picaSetView('browse');
           await picaLoadHot();
           return;
@@ -910,6 +1055,7 @@ function picaBindUi(root) {
         await picaLogin(email, password);
         picaSetStatus(els.loginStatus, '登录成功');
         picaShowToast('登录成功');
+        picaShowLoginOverlay(false);
         picaSetView('browse');
         await picaLoadHot();
       } catch (err) {
@@ -941,7 +1087,7 @@ function picaBindUi(root) {
       picaClearToken();
       if (els.tokenInput) els.tokenInput.value = '';
       picaSetStatus(els.loginStatus, '已清除 Token');
-      picaSetView('login');
+      picaShowLoginOverlay(true);
     });
   }
   if (els.btnSearch) {
@@ -1014,16 +1160,16 @@ export async function openPicacgApp() {
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
   root.style.setProperty('display', 'flex', 'important');
-  root.style.setProperty('z-index', '100010', 'important');
+  root.style.setProperty('z-index', '100030', 'important');
   root.style.setProperty('pointer-events', 'auto', 'important');
 
+  picaSetView('browse');
   if (picaState.token) {
-    picaSetView('browse');
     await picaLoadHot();
   } else {
-    picaSetView('login');
+    picaShowLoginOverlay(true);
     const els = picaEls(root);
-    if (els.tokenInput) els.tokenInput.value = '';
+    picaSetStatus(els.browseStatus, '请先登录 PicACG');
     picaSetStatus(els.loginStatus, '请登录或粘贴 Token');
   }
 }
@@ -1040,8 +1186,9 @@ export function closePicacgApp() {
     root.style.setProperty('display', 'none', 'important');
   }
   picaRestoreMediaPointer();
+  picaShowLoginOverlay(false);
   picaState.open = false;
-  picaState.view = 'login';
+  picaState.view = 'browse';
 }
 
 export function togglePicacgApp() {
