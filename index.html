@@ -187,7 +187,7 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow: hidden;
+      overflow: visible;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink);
       /* 桌宠窗必须全透明，避免与 Alpha 边缘混出白边/亮色虚影 */
@@ -203,12 +203,16 @@
     #pet,
     #cat-wrap {
       background: transparent !important;
+      border: 0 !important;
+      outline: none !important;
+      box-shadow: none;
     }
 
     #stage {
       position: relative;
       width: 100%;
       height: 100%;
+      overflow: visible !important;
     }
 
     /* ---------- 宠物（移动触屏版：约原尺寸 70%，默认偏右下） ---------- */
@@ -221,14 +225,20 @@
       z-index: 10;
       touch-action: none;
       -webkit-touch-callout: none;
-      overflow: visible;
+      overflow: visible !important;
       will-change: left, top, transform;
+      border: 0 !important;
+      outline: none !important;
+      background: transparent !important;
     }
     /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #pet-container-mobile 承担 */
     html.st-extension-host #pet {
       left: 50% !important;
-      top: 50% !important;
+      /* 略偏下，给上方气泡留空 */
+      top: 58% !important;
       position: absolute !important;
+      overflow: visible !important;
+      width: min(220px, 72%) !important;
     }
     html.st-extension-host #stage,
     html.st-extension-host html,
@@ -242,8 +252,26 @@
     }
     html.st-extension-host #pet {
       left: 50% !important;
-      top: 50% !important;
-      width: min(238px, 82%);
+      top: 58% !important;
+      width: min(220px, 72%) !important;
+      overflow: visible !important;
+    }
+    html.st-extension-host,
+    html.st-extension-host body {
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      background: transparent !important;
+      overflow: visible !important;
+      border: 0 !important;
+    }
+    html.st-extension-host #stage {
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      overscroll-behavior: none;
+      overflow: visible !important;
+      border: 0 !important;
+      background: transparent !important;
     }
     /* 酒馆 iframe：整页透明穿透，仅猫咪与控件可点，避免透明白板挡宿主 */
     html.st-extension-host,
@@ -279,6 +307,29 @@
       pointer-events: auto !important;
       transform: translate(-50%, -50%) !important;
       animation: none !important;
+    }
+    /* 气泡 / 侧栏按钮压在猫咪之上，禁止裁切 */
+    html.st-extension-host #bubble {
+      z-index: 1000 !important;
+      overflow: visible !important;
+    }
+    html.st-extension-host #chat-spark,
+    html.st-extension-host #memo-btn,
+    html.st-extension-host #food-btn,
+    html.st-extension-host #game-btn,
+    html.st-extension-host #btn-pet-quit {
+      z-index: 200 !important;
+    }
+    html.st-extension-host #cat-wrap {
+      z-index: 1 !important;
+      overflow: visible !important;
+      border: 0 !important;
+    }
+    #cat-fallback {
+      border: 0 !important;
+      outline: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
     }
 
 
@@ -381,6 +432,9 @@
       --shake-y: 2px;
       --shake-rot: 4deg;
       z-index: 1;
+      overflow: visible !important;
+      border: 0 !important;
+      background: transparent !important;
     }
 
     /* 经典八条待机：内层 Q 弹 + 眨眼（说话/打字/咬住/投喂时让位） */
@@ -716,12 +770,13 @@
       visibility: hidden;
       pointer-events: none;
       transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
-      z-index: 999 !important;
+      z-index: 1000 !important;
       isolation: isolate;
       white-space: normal !important;
       word-break: break-word !important;
       overflow-wrap: anywhere;
       box-sizing: border-box;
+      overflow: visible !important;
     }
 
     #bubble .bubble-content {
@@ -945,7 +1000,7 @@
       height: 34px;
       border: none;
       border-radius: 50%;
-      z-index: 130;
+      z-index: 200;
       pointer-events: auto !important;
       cursor: pointer;
       font-size: 16px;
@@ -995,7 +1050,7 @@
       height: 36px;
       border: none;
       border-radius: 12px;
-      z-index: 130;
+      z-index: 200;
       pointer-events: auto !important;
       cursor: pointer;
       font-size: 17px;
@@ -1191,7 +1246,7 @@
       height: 34px;
       border: none;
       border-radius: 50%;
-      z-index: 130;
+      z-index: 200;
       pointer-events: auto !important;
       cursor: pointer;
       font-size: 15px;
@@ -1308,7 +1363,7 @@
       height: 34px;
       border: none;
       border-radius: 50%;
-      z-index: 130;
+      z-index: 200;
       pointer-events: auto !important;
       cursor: pointer;
       font-size: 15px;
@@ -1333,7 +1388,7 @@
       height: 34px;
       border: none !important;
       border-radius: 50%;
-      z-index: 130;
+      z-index: 200;
       pointer-events: auto !important;
       cursor: pointer;
       font-size: 15px;
@@ -3699,7 +3754,7 @@
   <div id="stage">
     <div id="pet" class="pre-enter classic-mode pet-float-wrapper">
       <div id="cat-wrap" class="pet-classic-hachikyu">
-        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" onerror="this.onerror=null;this.style.display='none';var f=document.getElementById('cat-fallback');if(f){f.hidden=false;f.style.display='flex';}" /><div id="cat-fallback" hidden aria-hidden="true" style="display:none;width:100%;aspect-ratio:1;align-items:center;justify-content:center;font-size:72px;line-height:1;border:2px dashed rgba(91,141,239,.5);border-radius:20px;background:rgba(255,255,255,.12);user-select:none;pointer-events:none;">🐱</div>
+        <img id="cat" src="assets/cat1.png" alt="八条猫" draggable="false" onerror="this.onerror=null;this.style.display='none';var f=document.getElementById('cat-fallback');if(f){f.hidden=false;f.style.display='flex';}" /><div id="cat-fallback" hidden aria-hidden="true" style="display:none;width:100%;aspect-ratio:1;align-items:center;justify-content:center;font-size:72px;line-height:1;border:0;outline:none;background:transparent;user-select:none;pointer-events:none;">🐱</div>
         <video id="pet-video" autoplay loop muted playsinline
           style="display:none;width:100%;height:auto;object-fit:contain;pointer-events:none;"></video>
         <div id="bead-hat" aria-hidden="true"><img alt="" /></div>

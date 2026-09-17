@@ -106,8 +106,8 @@ function readOverlayPos(el) {
 
 /** 全视口边界：禁止任何局部容器 getBoundingClientRect / offsetParent */
 function clampOverlayPos(el, left, top) {
-  const w = (el && el.offsetWidth) || 160;
-  const h = (el && el.offsetHeight) || 200;
+  const w = (el && el.offsetWidth) || 300;
+  const h = (el && el.offsetHeight) || 400;
   const vw = window.innerWidth || document.documentElement.clientWidth || w;
   const vh = window.innerHeight || document.documentElement.clientHeight || h;
   const maxL = Math.max(0, vw - w);
@@ -155,8 +155,8 @@ function scheduleOverlayPos(el, left, top) {
 
 /** 默认：屏幕正中偏右安全位 */
 function defaultRightCenterPos(el) {
-  const w = (el && el.offsetWidth) || 160;
-  const h = (el && el.offsetHeight) || 200;
+  const w = (el && el.offsetWidth) || 300;
+  const h = (el && el.offsetHeight) || 400;
   const vw = window.innerWidth || 360;
   const vh = window.innerHeight || 640;
   return {
@@ -166,8 +166,8 @@ function defaultRightCenterPos(el) {
 }
 
 function centerPos(el) {
-  const w = (el && el.offsetWidth) || 160;
-  const h = (el && el.offsetHeight) || 200;
+  const w = (el && el.offsetWidth) || 300;
+  const h = (el && el.offsetHeight) || 400;
   const vw = window.innerWidth || 360;
   const vh = window.innerHeight || 640;
   return {
@@ -205,9 +205,16 @@ function ensureOverlayOnBody(el) {
     el.style.setProperty('right', 'auto', 'important');
     el.style.setProperty('bottom', 'auto', 'important');
     el.style.setProperty('overflow', 'visible', 'important');
+    el.style.setProperty('border', '0', 'important');
+    el.style.setProperty('background', 'transparent', 'important');
     /* 父层不拦截：由 iframe / fallback 自己接收事件 */
     el.style.setProperty('pointer-events', 'none', 'important');
     el.style.setProperty('transition', 'none', 'important');
+    /* 给气泡/按钮留空，禁止只包住猫身 */
+    if (!el.classList.contains('eighttailcat-expanded')) {
+      el.style.setProperty('width', 'min(300px, 78vw)', 'important');
+      el.style.setProperty('height', 'min(400px, 72vh)', 'important');
+    }
     if (!el.classList.contains('eighttailcat-hidden')) {
       el.style.setProperty('display', 'block', 'important');
       el.style.setProperty('visibility', 'visible', 'important');
@@ -243,9 +250,10 @@ function ensureFallbackFace(overlay) {
     'pointer-events:none',
     'z-index:0',
     'user-select:none',
-    'background:rgba(255,255,255,0.08)',
-    'border-radius:20px',
-    'border:2px dashed rgba(91,141,239,0.45)',
+    'background:transparent',
+    'border:0',
+    'outline:none',
+    'box-shadow:none',
   ].join(';');
   overlay.appendChild(face);
   return face;
@@ -314,8 +322,11 @@ function mountOverlay(base) {
   overlay.setAttribute('aria-label', '八条猫桌宠 (移动触屏版)');
   overlay.style.touchAction = 'none';
   overlay.style.willChange = 'transform';
-  overlay.style.width = 'min(160px, 42vw)';
-  overlay.style.height = 'min(200px, 42vw)';
+  overlay.style.width = 'min(300px, 78vw)';
+  overlay.style.height = 'min(400px, 72vh)';
+  overlay.style.overflow = 'visible';
+  overlay.style.border = '0';
+  overlay.style.background = 'transparent';
 
   ensureFallbackFace(overlay);
 
@@ -324,7 +335,7 @@ function mountOverlay(base) {
   iframe.title = '八条猫桌宠 (移动触屏版)';
   iframe.setAttribute('allowtransparency', 'true');
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;background:transparent;pointer-events:auto;';
+  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:auto;overflow:visible;';
   iframe.src = (base || getExtBase()) + 'index.html';
   iframe.addEventListener('load', function () {
     const face = document.getElementById(FALLBACK_ID);
