@@ -1,11 +1,13 @@
 /**
- * 酒馆宿主层 · 全屏沉浸短视频（抖音风上下滑）
- * - 原生 <video> + 多平台官方 iframe（B站 / YouTube / Pornhub）
- * - 换源栏默认折叠；平台快捷预设 + 关闭彻底静音
+ * 酒馆宿主层 · 沉浸式多功能应用与媒体中心
+ * - 顶部拟态 App 网格：B站 / YouTube / Pornhub（内嵌）· 抖音 / 小红书（仅点图标才唤起）
+ * - 原生 <video> + 多平台 iframe；关闭彻底静音
+ * - 注意：桌宠 📱 按钮不得直接调 Scheme，只能 toggle 本弹窗
  */
 
 const SV_ROOT_ID = 'eight-tail-short-video-root';
-const SV_STYLE_ID = 'eight-tail-sv-style-v5';
+const SV_STYLE_ID = 'eight-tail-sv-style-v6';
+const SV_OPEN_GUARD_MS = 550;
 const SV_API_LS_KEY = 'eight_tail_short_video_custom_api';
 const SV_MUTED_LS_KEY = 'eight_tail_short_video_muted';
 const SV_MODE_LS_KEY = 'eight_tail_short_video_mode'; /* native | bilibili | youtube | pornhub */
@@ -69,6 +71,8 @@ let svState = {
   mode: 'native', /* native | bilibili | youtube | pornhub */
   embedId: '',
   lastEmbed: { mode: '', id: '' },
+  /** 打开后短时间内忽略点击，防止 📱 抬手误点到小红书等图标 */
+  ignoreClicksUntil: 0,
 };
 
 function svIsEmbedMode(mode) {
@@ -288,6 +292,8 @@ function svEnsureStyle() {
   try {
     const old4 = document.getElementById('eight-tail-sv-style-v4');
     if (old4) old4.remove();
+    const old5 = document.getElementById('eight-tail-sv-style-v5');
+    if (old5) old5.remove();
     const old = document.getElementById('eight-tail-sv-style');
     if (old) old.remove();
   } catch (_) {}
@@ -314,6 +320,38 @@ function svEnsureStyle() {
   background: linear-gradient(180deg, rgba(0,0,0,.55), transparent) !important;
   pointer-events: auto !important;
 }
+#eight-tail-sv-apps {
+  position: absolute !important;
+  top: max(56px, calc(env(safe-area-inset-top) + 48px)) !important;
+  left: 10px !important; right: 10px !important;
+  z-index: 18 !important;
+  display: flex !important; flex-wrap: nowrap !important; gap: 8px !important;
+  overflow-x: auto !important; -webkit-overflow-scrolling: touch !important;
+  padding: 4px 2px 8px !important; pointer-events: auto !important;
+  scrollbar-width: none;
+}
+#eight-tail-sv-apps::-webkit-scrollbar { display: none; }
+.etc-sv-app {
+  flex: 0 0 auto !important; width: 64px !important; border: 0 !important;
+  border-radius: 16px !important; padding: 8px 4px 6px !important;
+  background: rgba(255,255,255,.14) !important; color: #fff !important;
+  display: flex !important; flex-direction: column !important; align-items: center !important;
+  gap: 4px !important; cursor: pointer !important; pointer-events: auto !important;
+  touch-action: manipulation !important; backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,.25);
+}
+.etc-sv-app .emoji {
+  width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; font-size: 20px;
+  background: linear-gradient(160deg, rgba(255,255,255,.22), rgba(255,255,255,.06));
+}
+.etc-sv-app .name { font-size: 10px; font-weight: 700; opacity: .92; line-height: 1.1; }
+.etc-sv-app[data-app="bilibili"] .emoji { background: linear-gradient(160deg, #ff8fab, #fb7299); }
+.etc-sv-app[data-app="youtube"] .emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
+.etc-sv-app[data-app="pornhub"] .emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
+.etc-sv-app[data-app="douyin"] .emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
+.etc-sv-app[data-app="xiaohongshu"] .emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
+.etc-sv-app.is-on { outline: 2px solid rgba(255,255,255,.85); }
 #eight-tail-sv-gear,
 #eight-tail-sv-close {
   width: 42px !important; height: 42px !important; border: 0 !important; border-radius: 50% !important;
@@ -330,6 +368,7 @@ function svEnsureStyle() {
   position: relative !important; flex: 1 1 auto !important; width: 100% !important; height: 100% !important;
   min-height: 0 !important; overflow: hidden !important; background: #000 !important;
   pointer-events: auto !important; touch-action: none !important;
+  margin-top: 108px !important;
 }
 #eight-tail-sv-video {
   position: absolute !important; inset: 0 !important; flex: 1 !important; width: 100% !important;
@@ -459,7 +498,7 @@ function svGetRoot() {
 function svBuildDom() {
   svEnsureStyle();
   let root = svGetRoot();
-  if (root && root.dataset.svVersion === '5') {
+  if (root && root.dataset.svVersion === '6') {
     svForceRootCss(root);
     return root;
   }
@@ -469,14 +508,21 @@ function svBuildDom() {
 
   root = document.createElement('div');
   root.id = SV_ROOT_ID;
-  root.dataset.svVersion = '5';
+  root.dataset.svVersion = '6';
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', '短视频');
+  root.setAttribute('aria-label', '应用与媒体中心');
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = [
     '<div id="eight-tail-sv-toolbar">',
     '  <button type="button" id="eight-tail-sv-gear" title="换源设置" aria-label="换源设置">⚙</button>',
-    '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭短视频">×</button>',
+    '  <button type="button" id="eight-tail-sv-close" title="关闭" aria-label="关闭媒体中心">×</button>',
+    '</div>',
+    '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
+    '  <button type="button" class="etc-sv-app" data-app="bilibili" data-action="embed"><span class="emoji" aria-hidden="true">📺</span><span class="name">B站</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="youtube" data-action="embed"><span class="emoji" aria-hidden="true">▶</span><span class="name">YouTube</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="pornhub" data-action="embed"><span class="emoji" aria-hidden="true">🔥</span><span class="name">Pornhub</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="douyin" data-action="external" data-scheme="snssdk1128://feed" data-web="https://www.douyin.com/"><span class="emoji" aria-hidden="true">🎵</span><span class="name">抖音</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="xiaohongshu" data-action="external" data-scheme="xhsdiscover://home" data-web="https://www.xiaohongshu.com/explore"><span class="emoji" aria-hidden="true">📕</span><span class="name">小红书</span></button>',
     '</div>',
     '<div id="eight-tail-sv-stage">',
     '  <video id="eight-tail-sv-video" muted autoplay loop playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page" preload="auto"></video>',
@@ -504,7 +550,7 @@ function svBuildDom() {
     '    <button type="button" id="eight-tail-sv-apply">应用源</button>',
     '    <button type="button" id="eight-tail-sv-reset">恢复内置</button>',
     '  </div>',
-    '  <div id="eight-tail-sv-status">支持 B站 / YouTube / Pornhub 官方内嵌 · 直链走原生播放</div>',
+    '  <div id="eight-tail-sv-status">点顶部图标切换 · 抖音/小红书仅点卡片才唤起 App</div>',
     '</div>',
   ].join('');
 
@@ -534,6 +580,7 @@ function svEls(root) {
     btnBili: root.querySelector('#eight-tail-sv-btn-bili'),
     btnYt: root.querySelector('#eight-tail-sv-btn-yt'),
     btnPh: root.querySelector('#eight-tail-sv-btn-ph'),
+    apps: root.querySelector('#eight-tail-sv-apps'),
     status: root.querySelector('#eight-tail-sv-status'),
     stage: root.querySelector('#eight-tail-sv-stage'),
     panel: root.querySelector('#video-source-panel') || root.querySelector('#eight-tail-sv-panel'),
@@ -855,9 +902,125 @@ function svSetPanelOpen(on) {
   if (root) root.classList.toggle('panel-open', svState.panelOpen);
 }
 
+function svArmClickGuard() {
+  svState.ignoreClicksUntil = Date.now() + SV_OPEN_GUARD_MS;
+}
+
+function svClicksArmed() {
+  return Date.now() >= (svState.ignoreClicksUntil || 0);
+}
+
+function svMarkAppActive(appName) {
+  const els = svEls();
+  if (!els.apps) return;
+  const nodes = els.apps.querySelectorAll('.etc-sv-app');
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    n.classList.toggle('is-on', n.getAttribute('data-app') === appName);
+  }
+}
+
+/**
+ * 仅从弹窗内 App 卡片调用。严禁 window.location（会打断酒馆）。
+ * Scheme 用隐藏 iframe；网页版用 window.open 新窗。
+ */
+function svLaunchExternalApp(opts) {
+  opts = opts || {};
+  const scheme = String(opts.scheme || '').trim();
+  const web = String(opts.web || '').trim();
+  const name = String(opts.name || '应用');
+  let opened = false;
+
+  function openWebFallback() {
+    if (!web) return;
+    try {
+      window.open(web, '_blank', 'noopener,noreferrer');
+      opened = true;
+    } catch (_) {}
+  }
+
+  if (scheme) {
+    const start = Date.now();
+    let fallbackTimer = null;
+    const clearWatch = function () {
+      try { window.removeEventListener('pagehide', onHide); } catch (_) {}
+      try { document.removeEventListener('visibilitychange', onVis); } catch (_) {}
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = null;
+      }
+    };
+    const onHide = function () { opened = true; clearWatch(); };
+    const onVis = function () {
+      if (document.hidden) { opened = true; clearWatch(); }
+    };
+    try {
+      window.addEventListener('pagehide', onHide);
+      document.addEventListener('visibilitychange', onVis);
+    } catch (_) {}
+
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'display:none;width:0;height:0;border:0;position:absolute;left:-9999px;';
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.src = scheme;
+      document.body.appendChild(iframe);
+      setTimeout(function () { try { iframe.remove(); } catch (_) {} }, 1600);
+    } catch (_) {
+      /* 绝不使用 window.location.href，避免打断酒馆生成 */
+    }
+
+    fallbackTimer = setTimeout(function () {
+      clearWatch();
+      if (!opened && Date.now() - start < 2800) {
+        openWebFallback();
+        svShowHint(name + ' · 网页版');
+        svSetStatus(name + ' 未安装时已打开网页版（新窗口）');
+      }
+    }, 1200);
+  } else {
+    openWebFallback();
+  }
+  svShowHint('正在打开 ' + name);
+}
+
+function svOnAppDockClick(btn) {
+  if (!btn || !svClicksArmed()) return;
+  const app = btn.getAttribute('data-app') || '';
+  const action = btn.getAttribute('data-action') || '';
+
+  if (action === 'external' || app === 'douyin' || app === 'xiaohongshu') {
+    const label = app === 'douyin' ? '抖音' : (app === 'xiaohongshu' ? '小红书' : app);
+    svLaunchExternalApp({
+      name: label,
+      scheme: btn.getAttribute('data-scheme') || '',
+      web: btn.getAttribute('data-web') || '',
+    });
+    /* 不关闭媒体中心，不打断酒馆 */
+    return;
+  }
+
+  if (app === 'bilibili') {
+    svMarkAppActive('bilibili');
+    svPlayBilibiliPreset();
+    return;
+  }
+  if (app === 'youtube') {
+    svMarkAppActive('youtube');
+    svPlayYoutubePreset();
+    return;
+  }
+  if (app === 'pornhub') {
+    svMarkAppActive('pornhub');
+    svPromptPornhub();
+    return;
+  }
+}
+
 function svPlayBilibiliPreset() {
   const els = svEls();
   if (els.api) els.api.value = SV_PEPPA_BVID;
+  svMarkAppActive('bilibili');
   svSwitchToEmbedMode('bilibili', SV_PEPPA_BVID, { saveInput: true, closePanel: true });
 }
 
@@ -865,6 +1028,7 @@ function svPlayYoutubePreset() {
   const demo = 'https://www.youtube.com/watch?v=' + SV_YT_DEMO_ID;
   const els = svEls();
   if (els.api) els.api.value = demo;
+  svMarkAppActive('youtube');
   svSwitchToEmbedMode('youtube', SV_YT_DEMO_ID, {
     saveInput: true,
     closePanel: true,
@@ -938,6 +1102,7 @@ function svIsInteractiveTarget(el) {
     el.closest('#video-source-panel') ||
     el.closest('#eight-tail-sv-panel') ||
     el.closest('#eight-tail-sv-toolbar') ||
+    el.closest('#eight-tail-sv-apps') ||
     el.closest('#eight-tail-sv-rail') ||
     el.closest('input') ||
     el.closest('button') ||
@@ -1017,7 +1182,17 @@ function svBindUi(root) {
     els.btnPh.addEventListener('click', function (e) {
       e.preventDefault();
       stopBubble(e);
+      if (!svClicksArmed()) return;
       svPromptPornhub();
+    });
+  }
+  if (els.apps) {
+    els.apps.addEventListener('click', function (e) {
+      const btn = e.target && e.target.closest ? e.target.closest('.etc-sv-app') : null;
+      if (!btn) return;
+      e.preventDefault();
+      stopBubble(e);
+      svOnAppDockClick(btn);
     });
   }
   if (els.reset) {
@@ -1144,6 +1319,7 @@ export async function openShortVideoPlayer() {
   svState.muted = true;
   svWriteMuted(true);
   svSetPanelOpen(false);
+  svArmClickGuard(); /* 防止抬手误点小红书/抖音 */
 
   const els = svEls(root);
   const savedCustom = svReadCustomApi();
@@ -1158,10 +1334,15 @@ export async function openShortVideoPlayer() {
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
   svState.open = true;
+  if (svIsEmbedMode(savedMode)) svMarkAppActive(savedMode);
+  else svMarkAppActive('');
 
   setTimeout(function () {
     svForceRootCss(root);
-    if (svRestoreSavedEmbed(savedMode, savedId, savedCustom)) return;
+    if (svRestoreSavedEmbed(savedMode, savedId, savedCustom)) {
+      if (svIsEmbedMode(savedMode)) svMarkAppActive(savedMode);
+      return;
+    }
 
     svSwitchToNativeMode();
     try {
@@ -1202,6 +1383,11 @@ export function closeShortVideoPlayer() {
   svState.open = false;
 }
 
+export function toggleShortVideoPlayer() {
+  if (svState.open) closeShortVideoPlayer();
+  else openShortVideoPlayer();
+}
+
 export function isShortVideoOpen() {
   return !!svState.open;
 }
@@ -1209,5 +1395,6 @@ export function isShortVideoOpen() {
 try {
   window.openShortVideoPlayer = openShortVideoPlayer;
   window.closeShortVideoPlayer = closeShortVideoPlayer;
+  window.toggleShortVideoPlayer = toggleShortVideoPlayer;
   window.isShortVideoOpen = isShortVideoOpen;
 } catch (_) {}

@@ -1502,7 +1502,7 @@
       min-height: 0;
       padding: 56px 18px 24px;
       box-sizing: border-box;
-      justify-content: center;
+      justify-content: flex-start;
     }
     #app-hub-modal .app-hub-title {
       font-size: 22px;
@@ -1520,30 +1520,33 @@
     }
     #app-hub-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 16px;
-      max-width: 360px;
-      margin: 0 auto;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      max-width: 520px;
+      margin: 0 auto 14px;
       width: 100%;
+    }
+    @media (max-width: 480px) {
+      #app-hub-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     .app-hub-icon {
       appearance: none;
       border: none;
-      border-radius: 22px;
+      border-radius: 18px;
       background: linear-gradient(145deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05));
       box-shadow:
         6px 6px 14px rgba(0, 0, 0, 0.35),
         -4px -4px 12px rgba(255, 255, 255, 0.06),
         inset 0 1px 0 rgba(255, 255, 255, 0.18);
       color: #fff;
-      padding: 18px 8px 14px;
+      padding: 12px 6px 10px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       cursor: pointer;
       touch-action: manipulation;
-      min-height: 112px;
+      min-height: 96px;
       -webkit-tap-highlight-color: transparent;
     }
     .app-hub-icon:active {
@@ -1553,29 +1556,65 @@
         inset -2px -2px 8px rgba(255, 255, 255, 0.05);
     }
     .app-hub-icon .app-emoji {
-      width: 56px;
-      height: 56px;
-      border-radius: 16px;
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 28px;
+      font-size: 24px;
       background: linear-gradient(160deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.06));
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
     }
     .app-hub-icon[data-app="douyin"] .app-emoji,
     .app-hub-icon[data-app="short-video"] .app-emoji { background: linear-gradient(160deg, #2a2a2a, #111); }
+    .app-hub-icon[data-app="bilibili"] .app-emoji { background: linear-gradient(160deg, #ff8fab, #fb7299); }
+    .app-hub-icon[data-app="youtube"] .app-emoji { background: linear-gradient(160deg, #ff6b6b, #c62828); }
+    .app-hub-icon[data-app="pornhub"] .app-emoji { background: linear-gradient(160deg, #ff9900, #ff6600); }
     .app-hub-icon[data-app="xiaohongshu"] .app-emoji { background: linear-gradient(160deg, #ff5a6a, #e11d48); }
     .app-hub-icon[data-app="discord"] .app-emoji { background: linear-gradient(160deg, #7289da, #5865f2); }
     .app-hub-icon .app-name {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
     }
     .app-hub-icon .app-open-hint {
       font-size: 10px;
       opacity: 0.55;
       font-weight: 400;
     }
+    #app-hub-player {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 220px;
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 8px 28px rgba(0,0,0,.45);
+    }
+    #app-hub-embed {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: 220px;
+      border: 0;
+      background: #000;
+    }
+    #app-hub-player-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,.7);
+      pointer-events: none;
+    }
+    #app-hub-player.has-media #app-hub-player-hint { display: none; }
 
     #game-modal,
     .game-modal {
@@ -3780,7 +3819,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="刷短视频（酒馆内嵌）" aria-label="刷短视频">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="打开应用与媒体中心" aria-label="打开应用与媒体中心" data-hub-only="1">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -3922,31 +3961,44 @@
       </div>
     </div>
 
-    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="刷一刷" aria-hidden="true">
+    <div id="app-hub-modal" class="mobile-fullscreen-view" role="dialog" aria-label="应用与媒体中心" aria-hidden="true">
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
-        <h3 class="app-hub-title">刷一刷</h3>
-        <p class="app-hub-sub">内嵌短视频不离页 · 抖音/小红书优先唤起本地 App<br />后台酒馆继续生成，不会被切屏打断</p>
+        <h3 class="app-hub-title">应用与媒体中心</h3>
+        <p class="app-hub-sub">点下方图标切换播放或唤起 App<br />桌宠 📱 只负责开关本弹窗，不会跳外链</p>
         <div id="app-hub-grid" aria-label="应用列表">
-          <button type="button" class="app-hub-icon" data-app="short-video" data-action="short-video">
-            <span class="app-emoji" aria-hidden="true">🎬</span>
-            <span class="app-name">短视频</span>
-            <span class="app-open-hint">B站·YT·内嵌</span>
+          <button type="button" class="app-hub-icon" data-app="bilibili" data-action="embed-bili">
+            <span class="app-emoji" aria-hidden="true">📺</span>
+            <span class="app-name">B站</span>
+            <span class="app-open-hint">内嵌播放</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
+            <span class="app-emoji" aria-hidden="true">▶</span>
+            <span class="app-name">YouTube</span>
+            <span class="app-open-hint">内嵌播放</span>
+          </button>
+          <button type="button" class="app-hub-icon" data-app="pornhub" data-action="embed-ph">
+            <span class="app-emoji" aria-hidden="true">🔥</span>
+            <span class="app-name">Pornhub</span>
+            <span class="app-open-hint">内嵌播放</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
             data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
             <span class="app-emoji" aria-hidden="true">🎵</span>
             <span class="app-name">抖音</span>
-            <span class="app-open-hint">唤起 App</span>
+            <span class="app-open-hint">点此唤起</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="xiaohongshu" data-action="external-app"
             data-scheme="xhsdiscover://home" data-url="https://www.xiaohongshu.com/" data-murl="https://www.xiaohongshu.com/explore">
             <span class="app-emoji" aria-hidden="true">📕</span>
             <span class="app-name">小红书</span>
-            <span class="app-open-hint">唤起 App</span>
+            <span class="app-open-hint">点此唤起</span>
           </button>
         </div>
-        <p class="app-hub-sub" style="margin-top:22px;margin-bottom:0;font-size:11px;opacity:.7;">短视频：⚙ 换源支持 B站 / YouTube / Pornhub<br />外链 App 未安装时自动打开网页版</p>
+        <div id="app-hub-player" aria-label="内嵌播放区">
+          <iframe id="app-hub-embed" title="内嵌播放器" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+          <div id="app-hub-player-hint">点上方 B站 / YouTube / Pornhub 开始播放</div>
+        </div>
       </div>
     </div>
 
@@ -12700,8 +12752,256 @@
         if (modal) {
           modal.classList.remove("open");
           modal.setAttribute("aria-hidden", "true");
+          modal.style.display = "none";
+        }
+        try { stopAppHubEmbed(); } catch (_) {}
+        try { syncCapsuleOverlay(); } catch (_) {}
+      }
+
+      function stopAppHubEmbed() {
+        const frame = document.getElementById("app-hub-embed");
+        const player = document.getElementById("app-hub-player");
+        if (frame) {
+          try { frame.src = "about:blank"; } catch (_) {}
+          try { frame.removeAttribute("src"); } catch (_) {}
+        }
+        if (player) player.classList.remove("has-media");
+      }
+
+      function setAppHubEmbed(url) {
+        const frame = document.getElementById("app-hub-embed");
+        const player = document.getElementById("app-hub-player");
+        if (!frame) return;
+        try { frame.src = "about:blank"; } catch (_) {}
+        frame.src = url;
+        if (player) player.classList.add("has-media");
+      }
+
+      /** 📱 唯一职责：开关媒体中心。严禁 Scheme / location / open */
+      function isMediaHubOpen() {
+        try {
+          if (window.parent && window.parent !== window && typeof window.parent.isShortVideoOpen === "function") {
+            if (window.parent.isShortVideoOpen()) return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.isShortVideoOpen === "function" && window.isShortVideoOpen()) return true;
+        } catch (_) {}
+        const modal = document.getElementById("app-hub-modal");
+        return !!(modal && modal.classList.contains("open"));
+      }
+
+      function requestToggleMediaHub() {
+        try {
+          if (window.parent && window.parent !== window && typeof window.parent.toggleShortVideoPlayer === "function") {
+            window.parent.toggleShortVideoPlayer();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof window.toggleShortVideoPlayer === "function") {
+            window.toggleShortVideoPlayer();
+            return true;
+          }
+        } catch (_) {}
+        try {
+          if (typeof notifyStHost === "function") {
+            notifyStHost({ type: "eight-tail-toggle-media-hub" });
+            return true;
+          }
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: "eight-tail-toggle-media-hub" }, "*");
+            return true;
+          }
+        } catch (_) {}
+        return false;
+      }
+
+      function openAppHubModalLocal() {
+        if (IS_SETTINGS_WINDOW) return;
+        try { closeGameModal(); } catch (_) {}
+        try { closeNewsBriefModal(); } catch (_) {}
+        const memoPanel = document.getElementById("memo-panel");
+        if (memoPanel) memoPanel.classList.remove("open");
+        const chatPanel = document.getElementById("chat-panel");
+        if (chatPanel) chatPanel.classList.remove("open");
+        const modal = document.getElementById("app-hub-modal");
+        if (modal) {
+          window.__appHubIgnoreUntil = Date.now() + 550;
+          modal.classList.add("open");
+          modal.setAttribute("aria-hidden", "false");
+          modal.style.display = "flex";
         }
         try { syncCapsuleOverlay(); } catch (_) {}
+        try { reportHitRect(); } catch (_) {}
+        markActivity();
+      }
+
+      function toggleMediaHub() {
+        if (IS_SETTINGS_WINDOW) return;
+        /* 酒馆宿主：走全屏媒体中心（避免小 iframe 里弹窗被抬手误点到小红书） */
+        if (requestToggleMediaHub()) return;
+        /* 独立模式：本地全屏弹窗 */
+        if (isMediaHubOpen()) {
+          closeAppHubModal();
+        } else {
+          openAppHubModalLocal();
+        }
+      }
+
+      function openAppHubModal() {
+        /* 兼容旧调用：统一走 toggle 语义的「打开」侧 */
+        if (isMediaHubOpen()) return;
+        toggleMediaHub();
+      }
+
+      /**
+       * 仅弹窗内抖音/小红书卡片可调用。
+       * 禁止 window.location（会打断酒馆）；Scheme 用隐藏 iframe。
+       */
+      function launchExternalApp(opts) {
+        opts = opts || {};
+        const scheme = String(opts.scheme || "").trim();
+        const web = String(opts.murl || opts.url || "").trim();
+        const name = String(opts.name || "应用");
+        let opened = false;
+
+        function openWebFallback() {
+          if (!web) return;
+          try {
+            window.open(web, "_blank", "noopener,noreferrer");
+            opened = true;
+          } catch (_) {}
+        }
+
+        if (scheme) {
+          const start = Date.now();
+          let fallbackTimer = null;
+          const clearWatch = function () {
+            try { window.removeEventListener("pagehide", onHide); } catch (_) {}
+            try { document.removeEventListener("visibilitychange", onVis); } catch (_) {}
+            if (fallbackTimer) {
+              clearTimeout(fallbackTimer);
+              fallbackTimer = null;
+            }
+          };
+          const onHide = function () { opened = true; clearWatch(); };
+          const onVis = function () {
+            if (document.hidden) { opened = true; clearWatch(); }
+          };
+          try {
+            window.addEventListener("pagehide", onHide);
+            document.addEventListener("visibilitychange", onVis);
+          } catch (_) {}
+
+          try {
+            const iframe = document.createElement("iframe");
+            iframe.style.cssText = "display:none;width:0;height:0;border:0;position:absolute;left:-9999px;";
+            iframe.setAttribute("aria-hidden", "true");
+            iframe.src = scheme;
+            document.body.appendChild(iframe);
+            setTimeout(function () { try { iframe.remove(); } catch (_) {} }, 1600);
+          } catch (_) {
+            /* 严禁 window.location.href = scheme */
+          }
+
+          fallbackTimer = setTimeout(function () {
+            clearWatch();
+            if (!opened && Date.now() - start < 2800) {
+              openWebFallback();
+              try { showToast(name + " 未安装，已打开网页版", 1600); } catch (_) {}
+            }
+          }, 1200);
+        } else {
+          openWebFallback();
+        }
+        return true;
+      }
+
+      function openAppInHub(name, url, action, btn) {
+        if (Date.now() < (window.__appHubIgnoreUntil || 0)) return;
+        const actionType = action || (btn && btn.getAttribute("data-action")) || "";
+        const app = name || (btn && btn.getAttribute("data-app")) || "";
+
+        if (actionType === "embed-bili" || app === "bilibili") {
+          setAppHubEmbed("https://player.bilibili.com/player.html?bvid=BV1Wx411n7Mh&page=1&high_quality=1&danmaku=0&autoplay=1");
+          try { showToast("B站内嵌播放", 1000); } catch (_) {}
+          return;
+        }
+        if (actionType === "embed-yt" || app === "youtube") {
+          setAppHubEmbed("https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ?autoplay=1&rel=0");
+          try { showToast("YouTube 内嵌播放", 1000); } catch (_) {}
+          return;
+        }
+        if (actionType === "embed-ph" || app === "pornhub") {
+          const key = window.prompt("粘贴 Pornhub 链接或 viewkey：", "");
+          if (!key) return;
+          const m = String(key).match(/[?&]viewkey=([^&#]+)/i) || String(key).match(/^([a-zA-Z0-9]{8,20})$/);
+          const viewkey = m ? decodeURIComponent(m[1]) : "";
+          if (!viewkey) {
+            try { showToast("未识别 viewkey", 1400); } catch (_) {}
+            return;
+          }
+          setAppHubEmbed("https://www.pornhub.com/embed/" + encodeURIComponent(viewkey));
+          try { showToast("Pornhub 内嵌播放", 1000); } catch (_) {}
+          return;
+        }
+
+        if (actionType === "external-app" || app === "douyin" || app === "xiaohongshu") {
+          const scheme = (btn && btn.getAttribute("data-scheme")) || "";
+          const murl = (btn && btn.getAttribute("data-murl")) || url || "";
+          const label = app === "douyin" ? "抖音" : (app === "xiaohongshu" ? "小红书" : app);
+          launchExternalApp({
+            name: label,
+            scheme: scheme,
+            url: url,
+            murl: murl,
+          });
+          /* 不关闭弹窗、不 location 跳转，避免打断酒馆 */
+          try { showToast("正在打开" + label + "…", 1000); } catch (_) {}
+          return;
+        }
+
+        /* 未知入口：忽略，绝不自动唤起外链 */
+      }
+
+      function bindAppHubUi() {
+        if (window.__appHubUiBound) return;
+        window.__appHubUiBound = true;
+        const modal = document.getElementById("app-hub-modal");
+        const closeBtn = document.getElementById("app-hub-close");
+        const grid = document.getElementById("app-hub-grid");
+        if (closeBtn) {
+          closeBtn.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAppHubModal();
+            try {
+              if (typeof notifyStHost === "function") {
+                notifyStHost({ type: "eight-tail-close-media-hub" });
+              }
+            } catch (_) {}
+          });
+        }
+        if (grid) {
+          grid.addEventListener("click", function (e) {
+            const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
+            if (!btn) return;
+            e.preventDefault();
+            e.stopPropagation();
+            openAppInHub(
+              btn.getAttribute("data-app"),
+              btn.getAttribute("data-url"),
+              btn.getAttribute("data-action") || "",
+              btn
+            );
+          });
+          /* 不再绑定 touchend，避免与 click 双触发误开小红书 */
+        }
+        if (modal) {
+          modal.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+          modal.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
+        }
       }
 
       function closeClickerModal() {
@@ -12965,183 +13265,9 @@
         return false;
       }
 
-      function openAppHubModal() {
-        if (IS_SETTINGS_WINDOW) return;
-        try { closeGameModal(); } catch (_) {}
-        try { closeNewsBriefModal(); } catch (_) {}
-        const memoPanel = document.getElementById("memo-panel");
-        if (memoPanel) memoPanel.classList.remove("open");
-        const chatPanel = document.getElementById("chat-panel");
-        if (chatPanel) chatPanel.classList.remove("open");
-        const modal = document.getElementById("app-hub-modal");
-        if (modal) {
-          modal.classList.add("open");
-          modal.setAttribute("aria-hidden", "false");
-        }
-        try { syncCapsuleOverlay(); } catch (_) {}
-        try { reportHitRect(); } catch (_) {}
-        markActivity();
-      }
-
-      /** 优先 URL Scheme 唤起本地 App，失败则网页版新窗；不打断酒馆后台 */
-      function launchExternalApp(opts) {
-        opts = opts || {};
-        const scheme = String(opts.scheme || "").trim();
-        const web = String(opts.murl || opts.url || "").trim();
-        const name = String(opts.name || "应用");
-        let opened = false;
-
-        function openWebFallback() {
-          if (!web) return;
-          try {
-            window.open(web, "_blank", "noopener,noreferrer");
-            opened = true;
-          } catch (_) {
-            try {
-              const a = document.createElement("a");
-              a.href = web;
-              a.target = "_blank";
-              a.rel = "noopener noreferrer";
-              a.style.display = "none";
-              document.body.appendChild(a);
-              a.click();
-              a.remove();
-              opened = true;
-            } catch (__) {}
-          }
-        }
-
-        if (scheme) {
-          const start = Date.now();
-          let fallbackTimer = null;
-          const clearWatch = function () {
-            try { window.removeEventListener("pagehide", onHide); } catch (_) {}
-            try { document.removeEventListener("visibilitychange", onVis); } catch (_) {}
-            if (fallbackTimer) {
-              clearTimeout(fallbackTimer);
-              fallbackTimer = null;
-            }
-          };
-          const onHide = function () {
-            opened = true;
-            clearWatch();
-          };
-          const onVis = function () {
-            if (document.hidden) {
-              opened = true;
-              clearWatch();
-            }
-          };
-          try {
-            window.addEventListener("pagehide", onHide);
-            document.addEventListener("visibilitychange", onVis);
-          } catch (_) {}
-
-          try {
-            const iframe = document.createElement("iframe");
-            iframe.style.cssText = "display:none;width:0;height:0;border:0;position:absolute;";
-            iframe.src = scheme;
-            document.body.appendChild(iframe);
-            setTimeout(function () {
-              try { iframe.remove(); } catch (_) {}
-            }, 1500);
-          } catch (_) {
-            try { window.location.href = scheme; } catch (__) {}
-          }
-
-          fallbackTimer = setTimeout(function () {
-            clearWatch();
-            if (!opened && Date.now() - start < 2800) {
-              openWebFallback();
-              try { showToast(name + " 未安装，已打开网页版", 1600); } catch (_) {}
-            }
-          }, 1200);
-        } else {
-          openWebFallback();
-        }
-        return true;
-      }
-
-      function openAppInHub(name, url, action, btn) {
-        const actionType = action || (btn && btn.getAttribute("data-action")) || "";
-        if (actionType === "short-video" || name === "short-video") {
-          requestOpenShortVideo();
-          try { closeAppHubModal(); } catch (_) {}
-          try { showToast("已打开内嵌短视频", 1200); } catch (_) {}
-          return;
-        }
-        if (actionType === "external-app" || name === "douyin" || name === "xiaohongshu") {
-          const scheme = (btn && btn.getAttribute("data-scheme")) || "";
-          const murl = (btn && btn.getAttribute("data-murl")) || url || "";
-          const label = name === "douyin" ? "抖音" : (name === "xiaohongshu" ? "小红书" : name);
-          launchExternalApp({
-            name: label,
-            scheme: scheme,
-            url: url,
-            murl: murl,
-          });
-          try { closeAppHubModal(); } catch (_) {}
-          try { showToast("正在打开" + label + "…", 1000); } catch (_) {}
-          return;
-        }
-        /* 未知入口：仍走内嵌短视频，避免误切屏 */
-        requestOpenShortVideo();
-        try { closeAppHubModal(); } catch (_) {}
-      }
-
-      function bindAppHubUi() {
-        if (window.__appHubUiBound) return;
-        window.__appHubUiBound = true;
-        const modal = document.getElementById("app-hub-modal");
-        const closeBtn = document.getElementById("app-hub-close");
-        const grid = document.getElementById("app-hub-grid");
-        if (closeBtn) {
-          closeBtn.addEventListener("click", function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            closeAppHubModal();
-            try {
-              if (typeof notifyStHost === "function") {
-                notifyStHost({ type: "eight-tail-close-short-video" });
-              }
-            } catch (_) {}
-          });
-        }
-        if (grid) {
-          grid.addEventListener("click", function (e) {
-            const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
-            if (!btn) return;
-            e.preventDefault();
-            e.stopPropagation();
-            openAppInHub(
-              btn.getAttribute("data-app"),
-              btn.getAttribute("data-url"),
-              btn.getAttribute("data-action") || "short-video",
-              btn
-            );
-          });
-          grid.addEventListener("touchend", function (e) {
-            const btn = e.target && e.target.closest ? e.target.closest("[data-app]") : null;
-            if (!btn) return;
-            e.preventDefault();
-            e.stopPropagation();
-            openAppInHub(
-              btn.getAttribute("data-app"),
-              btn.getAttribute("data-url"),
-              btn.getAttribute("data-action") || "short-video",
-              btn
-            );
-          }, { passive: false });
-        }
-        if (modal) {
-          modal.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
-          modal.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
-        }
-      }
-
       function openClickerModal() {
-        /* 移动版：连点器已替换为内嵌短视频 */
-        openAppHubModal();
+        /* 移动版：连点器已替换为媒体中心；📱 语义为开关弹窗 */
+        toggleMediaHub();
       }
 
       const NEWS_OFFLINE_LINES = [
@@ -13548,9 +13674,9 @@
             return;
           }
           if (wasLong) return;
-          /* 短按：打开移动端应用中心（替代原连点器 / 右键） */
+          /* 短按：仅开关媒体中心，严禁任何 Scheme / 外链 */
           try { closeMemo(); } catch (_) {}
-          openAppHubModal();
+          toggleMediaHub();
           markActivity();
         }
 

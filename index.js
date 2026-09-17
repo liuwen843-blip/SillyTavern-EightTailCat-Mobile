@@ -3,6 +3,7 @@ import { saveSettingsDebounced, event_types, eventSource } from '../../../../scr
 import {
   openShortVideoPlayer,
   closeShortVideoPlayer,
+  toggleShortVideoPlayer,
   isShortVideoOpen,
 } from './short-video.js';
 
@@ -412,17 +413,27 @@ function bindHostListenersOnce() {
     const data = ev && ev.data;
     if (!data || typeof data !== 'object') return;
 
-    /* 短视频：不依赖桌宠 root，避免隐藏桌宠时打不开 */
+    /* 媒体中心：桌宠 📱 只发 toggle，绝不带 Scheme */
+    if (
+      data.type === 'eight-tail-toggle-media-hub' ||
+      data.type === 'eighttailcat-toggle-media-hub' ||
+      data.type === 'eight-tail-toggle-short-video'
+    ) {
+      toggleShortVideoPlayer();
+      return;
+    }
     if (
       data.type === 'eight-tail-open-short-video' ||
-      data.type === 'eighttailcat-open-short-video'
+      data.type === 'eighttailcat-open-short-video' ||
+      data.type === 'eight-tail-open-media-hub'
     ) {
       openShortVideoPlayer();
       return;
     }
     if (
       data.type === 'eight-tail-close-short-video' ||
-      data.type === 'eighttailcat-close-short-video'
+      data.type === 'eighttailcat-close-short-video' ||
+      data.type === 'eight-tail-close-media-hub'
     ) {
       closeShortVideoPlayer();
       return;
