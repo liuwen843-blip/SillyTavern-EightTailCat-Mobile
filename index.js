@@ -270,7 +270,9 @@ function ensureOverlayOnBody(el) {
     el.style.setProperty('top', '0px', 'important');
     el.style.setProperty('right', 'auto', 'important');
     el.style.setProperty('bottom', 'auto', 'important');
-    el.style.setProperty('overflow', 'visible', 'important');
+    el.style.setProperty('overflow', 'hidden', 'important');
+    el.style.setProperty('scrollbar-width', 'none', 'important');
+    el.style.setProperty('-ms-overflow-style', 'none', 'important');
     el.style.setProperty('border', '0', 'important');
     el.style.setProperty('background', 'transparent', 'important');
     el.style.setProperty('pointer-events', 'none', 'important');
@@ -659,6 +661,9 @@ function mountOverlay(base) {
     }
     const frame0 = frames[0] || document.getElementById(FRAME_ID);
     if (frame0) {
+      frame0.setAttribute('scrolling', 'no');
+      try { frame0.scrolling = 'no'; } catch (_) {}
+      frame0.style.setProperty('overflow', 'hidden', 'important');
       frame0.style.setProperty('pointer-events', 'none', 'important');
       setupIframeClickThrough(frame0);
     }
@@ -676,7 +681,7 @@ function mountOverlay(base) {
   overlay.style.willChange = 'transform';
   overlay.style.width = 'min(260px, 72vw)';
   overlay.style.height = 'min(300px, 58vh)';
-  overlay.style.overflow = 'visible';
+  overlay.style.overflow = 'hidden';
   overlay.style.border = '0';
   overlay.style.background = 'transparent';
 
@@ -687,7 +692,9 @@ function mountOverlay(base) {
   iframe.title = '八条猫桌宠 (移动触屏版)';
   iframe.setAttribute('allowtransparency', 'true');
   iframe.setAttribute('allow', 'clipboard-read; clipboard-write');
-  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:none;overflow:visible;';
+  iframe.setAttribute('scrolling', 'no');
+  iframe.scrolling = 'no';
+  iframe.style.cssText = 'position:relative;z-index:1;display:block;width:100%;height:100%;border:0;outline:none;background:transparent;pointer-events:none;overflow:hidden;scrollbar-width:none;-ms-overflow-style:none;';
   iframe.src = (base || getExtBase()) + 'index.html';
   iframe.addEventListener('load', function () {
     const face = overlay.querySelector('#' + FALLBACK_ID);

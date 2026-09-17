@@ -1,337 +1,41 @@
 /**
- * 八条猫 · PicACG（哔咔漫画）独立阅读模块
- * - 登录 / Token 本地保存
- * - HMAC-SHA256 签名 + CORS 代理
- * - 搜索 / 热门 / 章节 / 条漫瀑布流阅读器
+ * 八条猫 · 漫画 Manga（MangaDex 开放源）
+ * - 原生 CORS：直接 fetch https://api.mangadex.org
+ * - 中文可用资源优先（zh / zh-hk）
+ * - 搜索 / 热门 / 章节 / 竖向瀑布流阅读
+ *
+ * 兼容旧入口：openPicacgApp / closePicacgApp 等仍可用。
  */
 
 const PICA_ROOT_ID = 'picacg-main-container';
-const PICA_STYLE_ID = 'eight-tail-picacg-style-v5';
-const PICA_TOKEN_LS = 'picacg_user_token';
-/* 官方 API + 网页反代节点 */
-const TARGET_API = 'https://picaapi.picacomic.com';
-const PICA_API_BASE = TARGET_API.replace(/\/?$/, '/');
-const PICA_API_BASES = [
-  'https://picaapi.picacomic.com/',
-  'https://go2778.com/',
-];
-/* 免 API Key 的开放 CORS 代理链（已移除失效的 corsproxy.io） */
-const CORS_PROXIES = [
-  {
-    name: 'codetabs',
-    build: function (url) {
-      return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url);
-    },
-  },
-  {
-    name: 'allorigins',
-    build: function (url) {
-      return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-    },
-  },
-];
-const PICA_FETCH_TIMEOUT_MS = 12000;
-/* 通用逆向静态密钥（开源客户端通用） */
-const PICA_API_KEY = 'C69BAF41DA5ABD1FFEDC6D2FEA56B';
-const PICA_SECRET = '~d}$Q7$eIni=V)9\\RK/P.RM4;9[7|@/CA}b~OW!3?EV`:<>M7pddUBL5n|0/*Cn';
+const PICA_STYLE_ID = 'eight-tail-manga-style-v1';
+const MD_API = 'https://api.mangadex.org';
+const MD_COVERS = 'https://uploads.mangadex.org/covers';
+/* 默认 API 不返回 pornographic，必须显式声明全部 contentRating */
+const MD_CONTENT_RATINGS = [
+  'contentRating[]=safe',
+  'contentRating[]=suggestive',
+  'contentRating[]=erotica',
+  'contentRating[]=pornographic',
+].join('&');
+/* MangaDex Format 标签：Doujinshi（同人本） */
+const MD_TAG_DOUJINSHI = 'b29d6a3d-1569-4e7a-8caf-7557bc92cd5d';
+let mdDoujinshiTagId = MD_TAG_DOUJINSHI;
 
 let picaState = {
   open: false,
-  view: 'login', /* login | browse | detail | reader */
-  token: '',
+  view: 'browse', /* browse | detail | reader */
   loading: false,
   comics: [],
   detail: null,
   eps: [],
   bookId: '',
-  epOrder: 1,
+  chapterId: '',
   epTitle: '',
   pages: [],
   chromeVisible: true,
   keyword: '',
 };
-
-function picaGetToken() {
-  try {
-    return String(localStorage.getItem(PICA_TOKEN_LS) || '').trim();
-  } catch (_) {
-    return '';
-  }
-}
-
-function picaSaveToken(token) {
-  const t = String(token || '').trim();
-  if (!t) return false;
-  try {
-    localStorage.setItem(PICA_TOKEN_LS, t);
-    picaState.token = t;
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function picaClearToken() {
-  try { localStorage.removeItem(PICA_TOKEN_LS); } catch (_) {}
-  picaState.token = '';
-}
-
-function picaNonce() {
-  try {
-    const arr = new Uint8Array(16);
-    crypto.getRandomValues(arr);
-    return Array.from(arr, function (b) {
-      return b.toString(16).padStart(2, '0');
-    }).join('');
-  } catch (_) {
-    return (Math.random().toString(16).slice(2) + Date.now().toString(16)).slice(0, 32);
-  }
-}
-
-async function picaHmacSha256Hex(secret, message) {
-  if (window.crypto && window.crypto.subtle) {
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(message));
-    return Array.from(new Uint8Array(sig), function (b) {
-      return b.toString(16).padStart(2, '0');
-    }).join('');
-  }
-  /* 无 SubtleCrypto 时动态加载 CryptoJS */
-  await picaEnsureCryptoJs();
-  return window.CryptoJS.HmacSHA256(message, secret).toString(window.CryptoJS.enc.Hex);
-}
-
-function picaEnsureCryptoJs() {
-  if (window.CryptoJS && window.CryptoJS.HmacSHA256) return Promise.resolve();
-  return new Promise(function (resolve, reject) {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js';
-    s.onload = function () { resolve(); };
-    s.onerror = function () { reject(new Error('CryptoJS 加载失败')); };
-    document.head.appendChild(s);
-  });
-}
-
-/**
- * 组装目标 API 直连 URL
- * @param {string} path 相对路径（可带 query）
- * @param {string} [base] API 根地址
- */
-function picaDirectUrl(path, base) {
-  const api = String(base || TARGET_API).replace(/\/$/, '');
-  const p = String(path || '');
-  return api + (p.startsWith('/') ? p : '/' + p);
-}
-
-/**
- * 通过免 Key CORS 代理包装目标 URL
- * @param {string} directUrl 完整目标地址
- * @param {{name:string,build:function(string):string}} proxy
- */
-function buildCorsProxyUrl(directUrl, proxy) {
-  if (!proxy || typeof proxy.build !== 'function') return directUrl;
-  return proxy.build(directUrl);
-}
-
-function picaFormatError(err, context) {
-  const raw = err && err.message != null ? String(err.message) : String(err || '未知错误');
-  const prefix = context || '请求失败';
-  if (/aborted|timeout|TimeoutError/i.test(raw)) {
-    return prefix + '：请求超时，已尝试切换下一代理/节点。';
-  }
-  if (/Failed to fetch|NetworkError|Load failed|CORS|Network request failed/i.test(raw)) {
-    return prefix + '：网络/跨域被拦截（' + raw + '）。请检查 Token、代理或节点是否可用。';
-  }
-  if (/HTTP\s*\d+/i.test(raw)) {
-    return prefix + '：' + raw + '（可能是 Token 无效、节点拒绝或路径错误）';
-  }
-  if (/JSON|Unexpected token|parse|非 JSON/i.test(raw)) {
-    return prefix + '：数据解析失败（' + raw + '）';
-  }
-  if (/全部代理|全部节点/i.test(raw)) {
-    return prefix + '：' + raw;
-  }
-  return prefix + '：' + raw;
-}
-
-async function picaFetchWithTimeout(url, options, timeoutMs) {
-  const ms = timeoutMs || PICA_FETCH_TIMEOUT_MS;
-  const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  let timer = null;
-  const opts = Object.assign({}, options || {});
-  if (ctrl) opts.signal = ctrl.signal;
-  try {
-    if (ctrl) {
-      timer = setTimeout(function () {
-        try { ctrl.abort(); } catch (_) {}
-      }, ms);
-    }
-    return await fetch(url, opts);
-  } catch (e) {
-    if (e && (e.name === 'AbortError' || /abort/i.test(String(e && e.message)))) {
-      throw new Error('超时 ' + ms + 'ms');
-    }
-    throw e;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/**
- * 生成哔咔请求头（HMAC-SHA256 + Token）
- * @param {string} pathOrUrl 相对路径或完整 URL
- * @param {string} method GET/POST
- * @param {string} token authorization
- */
-async function getPicacgHeaders(pathOrUrl, method, token) {
-  const m = String(method || 'GET').toUpperCase();
-  let path = String(pathOrUrl || '');
-  PICA_API_BASES.concat([PICA_API_BASE, 'https://picaapi.go2778.com/']).forEach(function (base) {
-    if (path.indexOf(base) === 0) path = path.slice(base.length);
-  });
-  path = path.replace(/^\//, '');
-  /* 签名只用 path?query，不含 host */
-  const pathForSign = path.split('#')[0];
-  const time = Math.floor(Date.now() / 1000).toString();
-  const nonce = picaNonce();
-  const raw = (pathForSign + time + nonce + m + PICA_API_KEY).toLowerCase();
-  const signature = await picaHmacSha256Hex(PICA_SECRET, raw);
-  const auth = String(
-    token || picaState.token || localStorage.getItem(PICA_TOKEN_LS) || picaGetToken() || ''
-  ).trim();
-  const headers = {
-    'api-key': PICA_API_KEY,
-    accept: 'application/json, application/vnd.picacomic.com.v1+json',
-    Accept: 'application/json, application/vnd.picacomic.com.v1+json',
-    'Content-Type': 'application/json',
-    'app-channel': '2',
-    'app-version': '2.2.1.3.3.4',
-    'app-uuid': 'defaultUuid',
-    'app-platform': 'android',
-    'app-build-version': '45',
-    'image-quality': 'original',
-    time: time,
-    nonce: nonce,
-    signature: signature,
-  };
-  /* 列表/详情等业务请求必须带鉴权 Token */
-  if (auth) headers.authorization = auth;
-  return headers;
-}
-
-async function picaReadResponseJson(res, via) {
-  const status = res && res.status;
-  const text = await res.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch (_) {
-    throw new Error(
-      '非 JSON 响应' +
-        (via ? '（' + via + '）' : '') +
-        (status ? ' HTTP ' + status : '') +
-        (text ? '：' + String(text).slice(0, 120) : '')
-    );
-  }
-  if (!res.ok) {
-    const apiMsg =
-      (data && (data.message || data.msg || data.error)) ||
-      ('HTTP ' + status);
-    throw new Error(String(apiMsg) + (via ? ' · via ' + via : ''));
-  }
-  return data;
-}
-
-async function picaFetchJson(path, method, body) {
-  const m = String(method || 'GET').toUpperCase();
-  const rel = String(path || '').replace(/^\//, '');
-  const token = String(localStorage.getItem(PICA_TOKEN_LS) || picaState.token || picaGetToken() || '').trim();
-  if (token) picaState.token = token;
-  const headers = await getPicacgHeaders(rel, m, token);
-  const bodyStr = body != null ? JSON.stringify(body) : null;
-
-  const attempts = [];
-
-  /* 节点 × 免 Key 代理链：失败/超时自动换下一个 */
-  PICA_API_BASES.forEach(function (base) {
-    const direct = picaDirectUrl(rel, base);
-    CORS_PROXIES.forEach(function (proxy) {
-      attempts.push({
-        name: proxy.name + ':' + base,
-        run: async function () {
-          const url = buildCorsProxyUrl(direct, proxy);
-          const res = await picaFetchWithTimeout(url, {
-            method: m,
-            headers: headers,
-            body: bodyStr,
-            credentials: 'omit',
-            cache: 'no-store',
-            mode: 'cors',
-          });
-          return picaReadResponseJson(res, proxy.name + '+' + base);
-        },
-      });
-    });
-  });
-
-  /* 直连兜底（部分环境可能已放行） */
-  PICA_API_BASES.forEach(function (base) {
-    attempts.push({
-      name: 'direct:' + base,
-      run: async function () {
-        const url = picaDirectUrl(rel, base);
-        const res = await picaFetchWithTimeout(url, {
-          method: m,
-          headers: headers,
-          body: bodyStr,
-          credentials: 'omit',
-          cache: 'no-store',
-          mode: 'cors',
-        });
-        return picaReadResponseJson(res, 'direct+' + base);
-      },
-    });
-  });
-
-  const errors = [];
-  for (let i = 0; i < attempts.length; i++) {
-    try {
-      const data = await attempts[i].run();
-      if (data && typeof data === 'object') return data;
-      throw new Error('空响应');
-    } catch (e) {
-      const tip = (e && e.message) ? e.message : String(e);
-      errors.push(attempts[i].name + ' → ' + tip);
-      console.warn('[PicACG] 请求失败，切换下一通道:', attempts[i].name, e);
-    }
-  }
-  const summary = errors.length
-    ? ('全部节点/代理失败：' + errors.slice(0, 4).join(' | '))
-    : '全部节点/代理失败';
-  throw new Error(summary);
-}
-
-function picaFileUrl(file) {
-  if (!file) return '';
-  if (typeof file === 'string') return file;
-  const path = String(file.path || (file.media && file.media.path) || '').replace(/^\//, '');
-  let server = String(
-    file.fileServer ||
-    (file.media && file.media.fileServer) ||
-    'https://storage1.picacomic.com'
-  ).replace(/\/$/, '');
-  if (!path) return '';
-  if (/\/static$/i.test(server)) return server + '/' + path;
-  if (path.indexOf('static/') === 0) return server + '/' + path;
-  return server + '/static/' + path;
-}
 
 function picaEsc(s) {
   return String(s == null ? '' : s)
@@ -339,6 +43,16 @@ function picaEsc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function picaFormatError(err, context) {
+  const raw = err && err.message != null ? String(err.message) : String(err || '未知错误');
+  const prefix = context || '请求失败';
+  if (/Failed to fetch|NetworkError|Load failed|CORS/i.test(raw)) {
+    return prefix + '：网络异常（' + raw + '）';
+  }
+  if (/HTTP\s*\d+/i.test(raw)) return prefix + '：' + raw;
+  return prefix + '：' + raw;
 }
 
 function picaGetRoot() {
@@ -360,21 +74,17 @@ function picaHideVideoLayer() {
     }
   } catch (_) {}
   try {
-    const videoRoot = document.getElementById('video-app-container') ||
+    const videoRoot =
+      document.getElementById('video-app-container') ||
       document.getElementById('eight-tail-short-video-root');
     if (!videoRoot) return;
     videoRoot.classList.add('picacg-hidden');
     videoRoot.style.setProperty('display', 'none', 'important');
     videoRoot.style.setProperty('pointer-events', 'none', 'important');
-    const video = videoRoot.querySelector('#eight-tail-sv-video');
+    const video = videoRoot.querySelector('video');
     if (video) {
       try { video.pause(); } catch (_) {}
       try { video.muted = true; } catch (_) {}
-      try { video.removeAttribute('src'); video.load(); } catch (_) {}
-    }
-    const embed = videoRoot.querySelector('#eight-tail-sv-embed');
-    if (embed) {
-      try { embed.src = 'about:blank'; } catch (_) {}
     }
   } catch (_) {}
 }
@@ -387,16 +97,11 @@ function picaRestoreVideoLayer() {
     }
   } catch (_) {}
   try {
-    const videoRoot = document.getElementById('video-app-container') ||
+    const videoRoot =
+      document.getElementById('video-app-container') ||
       document.getElementById('eight-tail-short-video-root');
     if (!videoRoot) return;
     videoRoot.classList.remove('picacg-hidden');
-    if (videoRoot.classList.contains('is-open')) {
-      videoRoot.style.setProperty('display', 'flex', 'important');
-      videoRoot.style.setProperty('pointer-events', 'auto', 'important');
-      videoRoot.style.setProperty('visibility', 'visible', 'important');
-      videoRoot.style.setProperty('z-index', '100002', 'important');
-    }
   } catch (_) {}
 }
 
@@ -407,12 +112,26 @@ function picaEnsureStyle() {
     style.id = PICA_STYLE_ID;
     document.head.appendChild(style);
   }
-  ['eight-tail-picacg-style-v1', 'eight-tail-picacg-style-v2', 'eight-tail-picacg-style-v3', 'eight-tail-picacg-style-v4'].forEach(function (id) {
+  [
+    'eight-tail-picacg-style-v1',
+    'eight-tail-picacg-style-v2',
+    'eight-tail-picacg-style-v3',
+    'eight-tail-picacg-style-v4',
+    'eight-tail-picacg-style-v5',
+  ].forEach(function (id) {
     try {
       const n = document.getElementById(id);
       if (n) n.remove();
     } catch (_) {}
   });
+  /* 清理旧授权弹窗 */
+  ['picacg-auth-modal', 'picacg-auth-backdrop'].forEach(function (id) {
+    try {
+      const n = document.getElementById(id);
+      if (n) n.remove();
+    } catch (_) {}
+  });
+
   style.textContent = `
 #picacg-main-container,
 #picacg-modal-container,
@@ -422,44 +141,32 @@ function picaEnsureStyle() {
   z-index: 100050 !important;
   display: none !important;
   flex-direction: column !important;
-  background: #0a0a0a !important;
-  color: #ffe8f2 !important;
+  background: #0b0c10 !important;
+  color: #f2f4f8 !important;
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
   pointer-events: auto !important;
   touch-action: manipulation !important;
   box-sizing: border-box !important;
 }
-#picacg-main-container,
 #picacg-main-container *,
-#picacg-modal-container,
 #picacg-modal-container *,
-#eight-tail-picacg-root,
-#eight-tail-picacg-root * {
-  box-sizing: border-box;
-  pointer-events: auto !important;
-}
+#eight-tail-picacg-root * { box-sizing: border-box; }
 #picacg-main-container.is-open,
 #picacg-modal-container.is-open,
 #eight-tail-picacg-root.is-open { display: flex !important; }
 
-.picacg-top-bar,
-.picacg-header,
-#pica-topbar {
+.picacg-top-bar {
   position: relative !important;
-  z-index: 100055 !important;
+  z-index: 5 !important;
   flex: 0 0 auto !important;
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
   padding: max(10px, env(safe-area-inset-top)) 12px 10px !important;
-  background: #141014 !important;
-  border-bottom: 1px solid rgba(255,120,180,.22) !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
+  background: #14161c !important;
+  border-bottom: 1px solid rgba(255,255,255,.08) !important;
 }
-.picacg-top-bar .pica-title,
-.picacg-header .pica-title,
-#pica-topbar .pica-title {
+.picacg-top-bar .pica-title {
   flex: 1 1 auto !important;
   min-width: 0 !important;
   font-size: 15px !important;
@@ -474,17 +181,8 @@ function picaEnsureStyle() {
   flex: 0 0 auto !important;
   gap: 8px !important;
   align-items: center !important;
-  position: relative !important;
-  z-index: 100056 !important;
-  pointer-events: auto !important;
 }
-.picacg-top-bar button,
-.picacg-header button,
-.picacg-top-bar .action-btn,
-#pica-topbar button,
-.picacg-top-actions button {
-  position: relative !important;
-  z-index: 100056 !important;
+.picacg-top-bar button {
   flex: 0 0 auto !important;
   min-width: 44px !important;
   height: 44px !important;
@@ -493,200 +191,73 @@ function picaEnsureStyle() {
   padding: 0 12px !important;
   font-size: 18px !important;
   font-weight: 700 !important;
-  background: rgba(255,255,255,.14) !important;
+  background: rgba(255,255,255,.12) !important;
   color: #fff !important;
   cursor: pointer !important;
-  pointer-events: auto !important;
-  touch-action: manipulation !important;
-  -webkit-tap-highlight-color: transparent !important;
 }
-#picacg-auth-btn,
-#pica-btn-account {
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  position: relative !important;
-  z-index: 100030 !important;
-  background: linear-gradient(135deg, #f5c542, #e6a817) !important;
-  color: #2a1a00 !important;
-  box-shadow: 0 2px 10px rgba(245, 197, 66, 0.35) !important;
+.picacg-top-bar button.primary {
+  background: linear-gradient(135deg, #5b8def, #3b6fd9) !important;
 }
-#picacg-auth-modal {
-  position: fixed !important;
-  inset: 0 !important;
-  background: rgba(0, 0, 0, 0.75) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-  backdrop-filter: blur(8px) !important;
-  display: none !important;
-  align-items: center !important;
-  justify-content: center !important;
-  z-index: 1000000 !important;
-  margin: 0 !important;
-  padding: 20px !important;
-  box-sizing: border-box !important;
-  pointer-events: auto !important;
-  color: #fff !important;
-  transform: none !important;
-  top: auto !important;
-  left: auto !important;
-  width: auto !important;
-  min-width: 0 !important;
-  border: none !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-#picacg-auth-modal.is-open {
-  display: flex !important;
-}
-#picacg-auth-modal * {
-  pointer-events: auto !important;
-  box-sizing: border-box !important;
-}
-#picacg-auth-modal .picacg-auth-card {
-  background: #18181c !important;
-  border: 1px solid rgba(255, 77, 121, 0.4) !important;
-  border-radius: 16px !important;
-  padding: 24px !important;
-  width: 100% !important;
-  max-width: 320px !important;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9) !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 14px !important;
-  transform: none !important;
-  position: relative !important;
-  top: auto !important;
-  left: auto !important;
-  margin: 0 !important;
-  color: #fff !important;
-}
-#picacg-auth-modal .picacg-auth-card h3 {
-  margin: 0 !important;
-  font-size: 16px !important;
-  color: #ff4d79 !important;
-  font-weight: 700 !important;
-}
-#picacg-auth-modal .picacg-auth-card input {
-  width: 100% !important;
-  padding: 12px 14px !important;
-  border-radius: 10px !important;
-  background: #111114 !important;
-  color: #fff !important;
-  border: 1px solid #3a3a42 !important;
-  font-size: 14px !important;
-  outline: none !important;
-  transition: border-color .15s ease, box-shadow .15s ease !important;
-}
-#picacg-auth-modal .picacg-auth-card input:focus {
-  border-color: #ff4d79 !important;
-  box-shadow: 0 0 0 3px rgba(255, 77, 121, 0.25) !important;
-}
-#picacg-auth-modal .picacg-auth-actions {
-  display: flex !important;
-  gap: 10px !important;
-  justify-content: flex-end !important;
-  margin-top: 4px !important;
-}
-#picacg-auth-modal .picacg-auth-actions button {
-  padding: 8px 14px !important;
-  border: none !important;
-  border-radius: 8px !important;
-  cursor: pointer !important;
-  font-size: 13px !important;
-}
-#picacg-auth-modal #pica-close-login {
-  background: #333 !important;
-  color: #ccc !important;
-}
-#picacg-auth-modal #pica-submit-login {
-  background: #ff4d79 !important;
-  color: #fff !important;
-  font-weight: bold !important;
-}
-.picacg-top-bar button.primary,
-#pica-topbar button.primary,
-.picacg-top-actions button.primary {
-  background: linear-gradient(135deg, #ff6b9d, #e91e63) !important;
-  color: #fff !important;
-}
+
 #pica-body {
   flex: 1 1 auto !important;
   min-height: 0 !important;
   overflow: hidden !important;
   position: relative !important;
-  z-index: 1 !important;
-  background: #0a0a0a !important;
+  background: #0b0c10 !important;
 }
 .pica-panel {
   position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 14px 14px 28px; display: none; z-index: 1;
-  background: #0a0a0a;
+  padding: 14px 14px 28px; display: none; background: #0b0c10;
 }
 .pica-panel.is-on { display: block; }
-.pica-login-overlay {
-  display: none !important;
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 100060 !important;
-  background: rgba(0, 0, 0, 0.82) !important;
-  align-items: flex-start !important;
-  justify-content: center !important;
-  padding: 64px 14px 24px !important;
-  overflow-y: auto !important;
-  pointer-events: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-}
-.pica-login-overlay.is-open {
-  display: flex !important;
-}
-.pica-login-sheet {
-  width: min(420px, 100%) !important;
-  margin: 0 auto !important;
-  background: #1a1018 !important;
-  border: 1px solid rgba(255,140,180,.35) !important;
-  border-radius: 18px !important;
-  padding: 16px !important;
-  box-shadow: 0 18px 40px rgba(0,0,0,.7) !important;
-  pointer-events: auto !important;
-  position: relative !important;
-  z-index: 100061 !important;
-}
-.pica-login-sheet h4 { margin: 0 0 10px; font-size: 15px; }
-.pica-card {
-  background: rgba(255,255,255,.06); border: 1px solid rgba(255,140,180,.18);
-  border-radius: 16px; padding: 14px; margin-bottom: 12px;
-}
-.pica-card h4 { margin: 0 0 8px; font-size: 14px; }
-.pica-hint { font-size: 12px; opacity: .72; line-height: 1.55; margin: 8px 0 0; }
-.pica-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
-.pica-field span { font-size: 12px; opacity: .8; }
-.pica-field input, .pica-search-row input {
-  width: 100%; border: 1px solid rgba(255,255,255,.2); border-radius: 12px;
-  background: rgba(255,255,255,.1); color: #fff; padding: 11px 12px; font-size: 14px;
-  outline: none; pointer-events: auto !important; touch-action: manipulation !important;
-  -webkit-user-select: text !important; user-select: text !important;
-}
-.pica-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.pica-actions button, .pica-search-row button, .pica-tabs button {
-  border: 0; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 800;
-  cursor: pointer; color: #fff; background: rgba(255,255,255,.14);
-  pointer-events: auto !important; touch-action: manipulation !important;
-}
-.pica-actions button.primary, .pica-search-row button.primary { background: linear-gradient(135deg, #ff6b9d, #e91e63); }
+
 .pica-search-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.pica-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.pica-tabs button.is-on { outline: 2px solid rgba(255,255,255,.85); background: rgba(233,30,99,.45); }
-.pica-grid {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+.pica-search-row input {
+  flex: 1; min-width: 0; border: 1px solid rgba(255,255,255,.16); border-radius: 12px;
+  background: rgba(255,255,255,.08); color: #fff; padding: 11px 12px; font-size: 14px; outline: none;
 }
-@media (min-width: 720px) { .pica-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.pica-search-row input:focus {
+  border-color: #5b8def; box-shadow: 0 0 0 3px rgba(91,141,239,.22);
+}
+.pica-search-row button, .pica-tabs button {
+  border: 0; border-radius: 12px; padding: 10px 14px; font-size: 13px; font-weight: 800;
+  cursor: pointer; color: #fff; background: rgba(255,255,255,.12);
+}
+.pica-search-row button.primary { background: linear-gradient(135deg, #5b8def, #3b6fd9); }
+.pica-tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.pica-tabs button.is-on { outline: 2px solid rgba(255,255,255,.85); background: rgba(91,141,239,.45); }
+
+.pica-status {
+  margin: 8px 0 12px; font-size: 12px; opacity: .78; min-height: 1.2em;
+  display: flex; align-items: center; gap: 8px;
+}
+.pica-spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.2); border-top-color: #5b8def;
+  animation: picaSpin .7s linear infinite; flex: 0 0 auto;
+}
+@keyframes picaSpin { to { transform: rotate(360deg); } }
+
+.pica-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 720px) {
+  .pica-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .pica-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 .pica-comic {
   border: 0; border-radius: 14px; overflow: hidden; padding: 0; text-align: left;
-  background: rgba(255,255,255,.08); color: #fff; cursor: pointer;
+  background: rgba(255,255,255,.06); color: #fff; cursor: pointer;
   box-shadow: 0 4px 14px rgba(0,0,0,.35);
 }
 .pica-comic:active { transform: scale(0.98); }
 .pica-comic-cover {
-  width: 100%; aspect-ratio: 3/4; background: #1a0a12; overflow: hidden;
+  width: 100%; aspect-ratio: 3/4; background: #161820; overflow: hidden;
 }
 .pica-comic-cover img {
   width: 100%; height: 100%; object-fit: cover; display: block; border: 0;
@@ -697,15 +268,11 @@ function picaEnsureStyle() {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .pica-comic-meta .s { font-size: 10px; opacity: .55; margin-top: 4px; }
-.pica-status {
-  margin: 8px 0 12px; font-size: 12px; opacity: .75; min-height: 1.2em;
-}
-.pica-detail-head {
-  display: flex; gap: 12px; margin-bottom: 14px;
-}
+
+.pica-detail-head { display: flex; gap: 12px; margin-bottom: 14px; }
 .pica-detail-cover {
   width: 110px; flex: 0 0 auto; border-radius: 12px; overflow: hidden;
-  aspect-ratio: 3/4; background: #1a0a12;
+  aspect-ratio: 3/4; background: #161820;
 }
 .pica-detail-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pica-detail-info { flex: 1; min-width: 0; }
@@ -717,6 +284,7 @@ function picaEnsureStyle() {
   background: rgba(255,255,255,.1); color: #fff; font-size: 13px; font-weight: 700;
   cursor: pointer;
 }
+
 .pica-reader {
   position: absolute; inset: 0; display: none; flex-direction: column;
   background: #000; overflow: hidden; z-index: 2;
@@ -730,8 +298,10 @@ function picaEnsureStyle() {
   transition: opacity .2s, transform .2s;
 }
 .pica-reader-chrome.is-hide { opacity: 0; pointer-events: none; transform: translateY(-8px); }
-.pica-reader-chrome .pica-title { flex: 1; font-size: 13px; font-weight: 700; color: #fff;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pica-reader-chrome .pica-title {
+  flex: 1; font-size: 13px; font-weight: 700; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .pica-reader-chrome button {
   border: 0; border-radius: 12px; padding: 8px 12px; font-size: 13px; font-weight: 700;
   background: rgba(255,255,255,.18); color: #fff; cursor: pointer;
@@ -743,7 +313,7 @@ function picaEnsureStyle() {
 }
 .pica-reader-progress.is-hide { opacity: 0; pointer-events: none; }
 .pica-reader-progress > i {
-  display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #ff6b9d, #e91e63);
+  display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #5b8def, #3b6fd9);
 }
 .pica-reader-stream {
   flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
@@ -757,38 +327,38 @@ function picaEnsureStyle() {
   position: absolute; left: 22%; right: 22%; top: 18%; bottom: 18%; z-index: 4;
   background: transparent;
 }
+.pica-empty {
+  padding: 36px 16px; text-align: center; opacity: .7; font-size: 13px; line-height: 1.5;
+}
 `;
 }
 
 function picaBuildDom() {
   picaEnsureStyle();
   let root = picaGetRoot();
-  if (root && root.dataset.picaVersion === '5' && root.id === PICA_ROOT_ID) return root;
+  if (root && root.dataset.picaVersion === 'md2' && root.id === PICA_ROOT_ID) return root;
   if (root) {
     try { root.remove(); } catch (_) {}
   }
-  /* 清理旧 id 节点 */
   ['picacg-modal-container', 'eight-tail-picacg-root'].forEach(function (id) {
     try {
       const legacy = document.getElementById(id);
       if (legacy) legacy.remove();
     } catch (_) {}
   });
+
   root = document.createElement('div');
   root.id = PICA_ROOT_ID;
-  root.dataset.picaVersion = '5';
+  root.dataset.picaVersion = 'md2';
   root.className = 'picacg-main-container';
   root.setAttribute('role', 'dialog');
-  root.setAttribute('aria-label', 'PicACG 哔咔漫画');
+  root.setAttribute('aria-label', '漫画 Manga');
   root.setAttribute('aria-hidden', 'true');
   root.innerHTML = [
-    '<div id="pica-topbar" class="picacg-top-bar picacg-header">',
+    '<div id="pica-topbar" class="picacg-top-bar">',
     '  <button type="button" id="pica-btn-back" class="action-btn" title="返回" aria-label="返回">←</button>',
-    '  <div class="pica-title" id="pica-heading">PicACG 哔咔</div>',
+    '  <div class="pica-title" id="pica-heading">漫画 Manga</div>',
     '  <div class="picacg-top-actions">',
-    '    <button type="button" id="picacg-auth-btn" class="action-btn" title="登录 / Token" aria-label="登录配置"',
-    '      style="cursor:pointer;pointer-events:auto!important;position:relative;z-index:100030!important;"',
-    '      onclick="window.showPicacgLoginModal(event)">🔑</button>',
     '    <button type="button" id="pica-btn-close" class="action-btn primary" title="关闭" aria-label="关闭"',
     '      onclick="return window.__picaCloseApp && window.__picaCloseApp(event)">✕</button>',
     '  </div>',
@@ -796,11 +366,12 @@ function picaBuildDom() {
     '<div id="pica-body">',
     '  <div class="pica-panel is-on" id="pica-panel-browse">',
     '    <div class="pica-search-row">',
-    '      <input id="pica-search-input" type="search" enterkeyhint="search" placeholder="关键词搜索漫画…" />',
+    '      <input id="pica-search-input" type="search" enterkeyhint="search" placeholder="搜索漫画标题…" />',
     '      <button type="button" class="primary" id="pica-btn-search">搜索</button>',
     '    </div>',
     '    <div class="pica-tabs" role="tablist">',
-    '      <button type="button" data-tab="hot" class="is-on">每日推荐 / 热门</button>',
+    '      <button type="button" data-tab="hot" class="is-on">热门推荐</button>',
+    '      <button type="button" data-tab="doujin">同人本</button>',
     '      <button type="button" data-tab="search">搜索结果</button>',
     '    </div>',
     '    <div class="pica-status" id="pica-browse-status">准备中…</div>',
@@ -826,22 +397,6 @@ function picaBuildDom() {
     '    <div class="pica-reader-stream" id="pica-reader-stream"></div>',
     '    <div class="pica-reader-progress" id="pica-reader-progress"><i id="pica-reader-bar"></i></div>',
     '  </div>',
-    '  <div id="pica-login-overlay" class="pica-login-overlay" aria-label="PicACG 登录">',
-    '    <div class="pica-login-sheet" role="dialog">',
-    '      <h4>🔑 PicACG 登录 / Token</h4>',
-    '      <div class="pica-field"><span>邮箱 / 账号</span><input id="pica-email" type="text" autocomplete="username" placeholder="邮箱或用户名" /></div>',
-    '      <div class="pica-field"><span>密码</span><input id="pica-password" type="password" autocomplete="current-password" placeholder="密码" /></div>',
-    '      <div class="pica-field"><span>或手动粘贴 Token</span><input id="pica-overlay-token" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴已有 Token" /></div>',
-    '      <div class="pica-actions">',
-    '        <button type="button" class="primary" id="pica-btn-login">登录 / 保存</button>',
-    '        <button type="button" id="pica-btn-test">测试连接</button>',
-    '        <button type="button" id="pica-btn-clear">清除 Token</button>',
-    '        <button type="button" id="pica-btn-login-dismiss">关闭</button>',
-    '      </div>',
-    '      <p class="pica-hint">Token 保存于本地浏览器，仅用于向哔咔接口请求章节与漫画切片。</p>',
-    '      <p class="pica-status" id="pica-login-status"></p>',
-    '    </div>',
-    '  </div>',
     '</div>',
   ].join('');
   document.body.appendChild(root);
@@ -856,21 +411,11 @@ function picaEls(root) {
     root: root,
     heading: root.querySelector('#pica-heading'),
     back: root.querySelector('#pica-btn-back'),
-    account: root.querySelector('#picacg-auth-btn') || root.querySelector('#pica-btn-account'),
     close: root.querySelector('#pica-btn-close'),
     topbar: root.querySelector('#pica-topbar'),
-    loginOverlay: root.querySelector('#pica-login-overlay'),
-    loginDismiss: root.querySelector('#pica-btn-login-dismiss'),
     panelBrowse: root.querySelector('#pica-panel-browse'),
     panelDetail: root.querySelector('#pica-panel-detail'),
     panelReader: root.querySelector('#pica-panel-reader'),
-    email: root.querySelector('#pica-email'),
-    password: root.querySelector('#pica-password'),
-    tokenInput: root.querySelector('#pica-overlay-token') || root.querySelector('#pica-token-input'),
-    btnLogin: root.querySelector('#pica-btn-login'),
-    btnTest: root.querySelector('#pica-btn-test'),
-    btnClear: root.querySelector('#pica-btn-clear'),
-    loginStatus: root.querySelector('#pica-login-status'),
     searchInput: root.querySelector('#pica-search-input'),
     btnSearch: root.querySelector('#pica-btn-search'),
     browseStatus: root.querySelector('#pica-browse-status'),
@@ -890,50 +435,19 @@ function picaEls(root) {
   };
 }
 
-function picaSetStatus(el, text) {
-  if (el) el.textContent = text || '';
-}
-
-function picaShowToast(msg) {
-  try {
-    if (typeof window.showToast === 'function') {
-      window.showToast(String(msg || ''), 1800);
-      return;
-    }
-  } catch (_) {}
-  const els = picaEls();
-  if (els.browseStatus) picaSetStatus(els.browseStatus, msg);
-  if (els.loginStatus) picaSetStatus(els.loginStatus, msg);
-}
-
-function picaShowLoginOverlay(on) {
-  const els = picaEls();
-  if (!els.loginOverlay) return;
-  const show = !!on;
-  els.loginOverlay.classList.toggle('is-open', show);
-  if (show) {
-    if (els.tokenInput) {
-      try { els.tokenInput.value = picaGetToken(); } catch (_) {}
-    }
-    picaSetStatus(els.loginStatus, picaGetToken() ? '已保存 Token，可测试或重新登录' : '请登录或粘贴 Token');
-    setTimeout(function () {
-      try {
-        const focusEl = (els.email && !els.email.value) ? els.email : els.tokenInput;
-        if (focusEl) focusEl.focus();
-      } catch (_) {}
-    }, 40);
+function picaSetStatus(el, text, loading) {
+  if (!el) return;
+  if (loading) {
+    el.innerHTML = '<span class="pica-spinner" aria-hidden="true"></span><span>' + picaEsc(text || '加载中…') + '</span>';
+  } else {
+    el.textContent = text || '';
   }
 }
 
 function picaSetView(view) {
-  if (view === 'login') {
-    picaShowLoginOverlay(true);
-    return;
-  }
   picaState.view = view;
   const els = picaEls();
   if (!els.root) return;
-  picaShowLoginOverlay(false);
   const map = {
     browse: els.panelBrowse,
     detail: els.panelDetail,
@@ -945,16 +459,118 @@ function picaSetView(view) {
     if (k === 'reader') panel.classList.toggle('is-on', view === 'reader');
     else panel.classList.toggle('is-on', view === k);
   });
-  const titles = {
-    browse: 'PicACG 哔咔',
-    detail: '漫画详情',
-    reader: picaState.epTitle || '阅读器',
-  };
-  if (els.heading) els.heading.textContent = titles[view] || 'PicACG';
-  if (els.back) els.back.style.visibility = view === 'browse' ? 'hidden' : 'visible';
-  if (els.root) {
-    els.root.classList.toggle('reader-mode', view === 'reader');
+  if (els.heading) {
+    if (view === 'browse') els.heading.textContent = '漫画 Manga';
+    else if (view === 'detail' && picaState.detail) {
+      els.heading.textContent = picaState.detail.title || '漫画详情';
+    } else if (view === 'reader') {
+      els.heading.textContent = picaState.epTitle || '阅读中';
+    }
   }
+}
+
+/* ---------- MangaDex API ---------- */
+
+function mdContentRatingQs() {
+  return MD_CONTENT_RATINGS;
+}
+
+function mdLangQs() {
+  return (
+    'availableTranslatedLanguage[]=zh' +
+    '&availableTranslatedLanguage[]=zh-hk'
+  );
+}
+
+/**
+ * 组装 /manga 列表查询（始终带全部分级，可选标题与同人本标签）
+ * @param {{title?:string,doujinOnly?:boolean,orderFollowed?:boolean}} opts
+ */
+function mdBuildMangaListQs(opts) {
+  opts = opts || {};
+  const parts = [
+    'limit=20',
+    mdLangQs(),
+    mdContentRatingQs(),
+    'includes[]=cover_art',
+  ];
+  if (opts.orderFollowed) parts.push('order[followedCount]=desc');
+  if (opts.title) parts.push('title=' + encodeURIComponent(opts.title));
+  if (opts.doujinOnly && mdDoujinshiTagId) {
+    parts.push('includedTags[]=' + encodeURIComponent(mdDoujinshiTagId));
+  }
+  return parts.join('&');
+}
+
+async function mdEnsureDoujinshiTag() {
+  if (mdDoujinshiTagId) return mdDoujinshiTagId;
+  try {
+    const tags = await mdFetchJson(MD_API + '/manga/tag');
+    const list = (tags && tags.data) || [];
+    const hit = list.find(function (t) {
+      const name = t && t.attributes && t.attributes.name;
+      return name && (name.en === 'Doujinshi' || name.zh === '同人志' || name['zh-hk'] === '同人誌');
+    });
+    if (hit && hit.id) mdDoujinshiTagId = hit.id;
+  } catch (_) {}
+  if (!mdDoujinshiTagId) mdDoujinshiTagId = MD_TAG_DOUJINSHI;
+  return mdDoujinshiTagId;
+}
+
+async function mdFetchJson(url) {
+  const res = await fetch(url, {
+    method: 'GET',
+    credentials: 'omit',
+    cache: 'no-store',
+    mode: 'cors',
+    headers: { accept: 'application/json' },
+  });
+  const text = await res.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (_) {
+    throw new Error('非 JSON 响应 HTTP ' + res.status + (text ? '：' + text.slice(0, 100) : ''));
+  }
+  if (!res.ok) {
+    const msg = (data && (data.message || data.result)) || ('HTTP ' + res.status);
+    throw new Error(String(msg));
+  }
+  return data;
+}
+
+function mdPickTitle(attributes) {
+  const t = (attributes && attributes.title) || {};
+  return t.zh || t['zh-hk'] || t.en || t.ja || Object.values(t)[0] || '未命名';
+}
+
+function mdCoverUrl(mangaId, relationships) {
+  const rels = Array.isArray(relationships) ? relationships : [];
+  const cover = rels.find(function (r) { return r && r.type === 'cover_art'; });
+  const fileName = cover && cover.attributes && cover.attributes.fileName;
+  if (!mangaId || !fileName) return '';
+  return MD_COVERS + '/' + mangaId + '/' + fileName + '.256.jpg';
+}
+
+function mdNormalizeMangaList(data) {
+  const list = (data && data.data) || [];
+  if (!Array.isArray(list)) return [];
+  return list.map(function (item) {
+    const id = item && item.id;
+    const attrs = (item && item.attributes) || {};
+    const title = mdPickTitle(attrs);
+    const cover = mdCoverUrl(id, item.relationships);
+    const status = attrs.status || '';
+    const year = attrs.year || '';
+    return {
+      id: id,
+      title: title,
+      cover: cover,
+      status: status,
+      year: year,
+      raw: item,
+    };
+  }).filter(function (x) { return x.id; });
 }
 
 function picaRenderComics(list) {
@@ -962,169 +578,177 @@ function picaRenderComics(list) {
   if (!els.grid) return;
   els.grid.innerHTML = '';
   if (!list || !list.length) {
-    els.grid.innerHTML = '<div style="grid-column:1/-1;opacity:.65;padding:24px;text-align:center;font-size:13px;">暂无结果</div>';
+    els.grid.innerHTML = '<div class="pica-empty" style="grid-column:1/-1;">暂无漫画</div>';
     return;
   }
   list.forEach(function (comic) {
-    const id = comic._id || comic.id || '';
-    const title = comic.title || '未命名';
-    const author = (comic.author || (comic.chineseTeam) || '') + '';
-    const cover = picaFileUrl(comic.thumb || comic.cover);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pica-comic';
-    btn.dataset.id = id;
+    btn.dataset.id = comic.id;
     btn.innerHTML =
-      '<div class="pica-comic-cover"><img alt="" loading="lazy" referrerpolicy="no-referrer" src="' +
-      picaEsc(cover) + '" /></div>' +
-      '<div class="pica-comic-meta"><div class="t">' + picaEsc(title) + '</div>' +
-      '<div class="s">' + picaEsc(author || '哔咔') + '</div></div>';
+      '<div class="pica-comic-cover">' +
+      (comic.cover
+        ? '<img src="' + picaEsc(comic.cover) + '" alt="" loading="lazy" referrerpolicy="no-referrer" />'
+        : '') +
+      '</div>' +
+      '<div class="pica-comic-meta">' +
+      '<div class="t">' + picaEsc(comic.title) + '</div>' +
+      '<div class="s">' + picaEsc([comic.status, comic.year].filter(Boolean).join(' · ')) + '</div>' +
+      '</div>';
     els.grid.appendChild(btn);
   });
 }
 
-function picaNormalizeComics(data) {
-  const docs =
-    (data && data.data && data.data.comics && data.data.comics.docs) ||
-    (data && data.data && data.data.comics) ||
-    (data && data.comics && data.comics.docs) ||
-    [];
-  return Array.isArray(docs) ? docs : [];
-}
-
-async function picaLogin(email, password) {
-  const data = await picaFetchJson('auth/sign-in', 'POST', {
-    email: String(email || '').trim(),
-    password: String(password || ''),
-  });
-  const token = (data && data.data && data.data.token) || (data && data.token) || '';
-  if (!token) {
-    const msg = (data && (data.message || data.msg)) || '登录失败：未返回 token';
-    throw new Error(msg);
-  }
-  picaSaveToken(token);
-  return token;
-}
-
-async function picaTestConnection() {
-  const token = picaState.token || picaGetToken();
-  if (!token) throw new Error('尚未保存 Token');
-  picaState.token = token;
-  const data = await picaFetchJson('users/profile', 'GET');
-  if (data && (data.code === 200 || data.data)) return data;
-  throw new Error((data && data.message) || '测试失败');
-}
-
 async function picaLoadHot() {
   const els = picaEls();
-  const token = String(localStorage.getItem(PICA_TOKEN_LS) || picaGetToken() || '').trim();
-  if (!token) {
-    picaSetStatus(els.browseStatus, '热门加载失败：尚未登录。请先点顶栏 🔑 保存 Token 或账号登录。');
-    picaRenderComics([]);
-    return;
-  }
-  picaSetStatus(els.browseStatus, '加载热门 / 推荐…');
+  picaSetStatus(els.browseStatus, '加载热门推荐…', true);
   try {
-    let data = null;
-    try {
-      data = await picaFetchJson('comics?page=1&s=dd', 'GET');
-    } catch (firstErr) {
-      try {
-        data = await picaFetchJson('comics/random', 'GET');
-      } catch (secondErr) {
-        throw secondErr || firstErr;
-      }
-    }
-    const list = picaNormalizeComics(data);
-    if (!list.length && data && data.data && Array.isArray(data.data.comics)) {
-      picaState.comics = data.data.comics;
-    } else {
-      picaState.comics = list;
-    }
+    const qs = mdBuildMangaListQs({ orderFollowed: true });
+    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    picaState.comics = mdNormalizeMangaList(data);
     picaRenderComics(picaState.comics);
-    picaSetStatus(els.browseStatus, '热门 · ' + picaState.comics.length + ' 部');
+    picaSetStatus(els.browseStatus, '热门 · ' + picaState.comics.length + ' 部（含全部分级）', false);
   } catch (e) {
-    picaSetStatus(els.browseStatus, picaFormatError(e, '热门加载失败'));
+    picaSetStatus(els.browseStatus, picaFormatError(e, '热门加载失败'), false);
     picaRenderComics([]);
   }
 }
 
-async function picaSearch(keyword) {
+async function picaLoadDoujin() {
+  const els = picaEls();
+  picaSetStatus(els.browseStatus, '加载同人本…', true);
+  try {
+    await mdEnsureDoujinshiTag();
+    const qs = mdBuildMangaListQs({ orderFollowed: true, doujinOnly: true });
+    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    picaState.comics = mdNormalizeMangaList(data);
+    picaRenderComics(picaState.comics);
+    picaSetStatus(els.browseStatus, '同人本 · ' + picaState.comics.length + ' 部', false);
+  } catch (e) {
+    picaSetStatus(els.browseStatus, picaFormatError(e, '同人本加载失败'), false);
+    picaRenderComics([]);
+  }
+}
+
+async function picaSearch(keyword, opts) {
+  opts = opts || {};
   const kw = String(keyword || '').trim();
-  if (!kw) {
-    picaShowToast('请输入关键词');
+  if (!kw && !opts.doujinOnly) {
+    try {
+      if (typeof window.showToast === 'function') window.showToast('请输入关键词', 1600);
+    } catch (_) {}
     return;
   }
   picaState.keyword = kw;
   const els = picaEls();
-  picaSetStatus(els.browseStatus, '搜索中：' + kw);
-  try {
-    const data = await picaFetchJson(
-      'comics/search?page=1&q=' + encodeURIComponent(kw),
-      'GET'
-    );
-    picaState.comics = picaNormalizeComics(data);
-    picaRenderComics(picaState.comics);
-    picaSetStatus(els.browseStatus, '搜索「' + kw + '」· ' + picaState.comics.length + ' 部');
-    const tabs = els.root && els.root.querySelectorAll('.pica-tabs button');
-    if (tabs) {
-      for (let i = 0; i < tabs.length; i++) {
-        tabs[i].classList.toggle('is-on', tabs[i].getAttribute('data-tab') === 'search');
-      }
+  const label = opts.doujinOnly
+    ? (kw ? ('搜索同人：「' + kw + '」') : '加载同人本…')
+    : ('搜索中：' + kw);
+  picaSetStatus(els.browseStatus, label, true);
+  const tabs = els.root && els.root.querySelectorAll('.pica-tabs button');
+  if (tabs) {
+    const activeTab = opts.doujinOnly ? 'doujin' : 'search';
+    for (let i = 0; i < tabs.length; i++) {
+      tabs[i].classList.toggle('is-on', tabs[i].getAttribute('data-tab') === activeTab);
     }
+  }
+  try {
+    if (opts.doujinOnly) await mdEnsureDoujinshiTag();
+    const qs = mdBuildMangaListQs({
+      title: kw || undefined,
+      doujinOnly: !!opts.doujinOnly,
+      orderFollowed: !kw,
+    });
+    const data = await mdFetchJson(MD_API + '/manga?' + qs);
+    picaState.comics = mdNormalizeMangaList(data);
+    picaRenderComics(picaState.comics);
+    const tip = opts.doujinOnly
+      ? ('同人' + (kw ? ('「' + kw + '」') : '') + ' · ' + picaState.comics.length + ' 部')
+      : ('搜索「' + kw + '」· ' + picaState.comics.length + ' 部');
+    picaSetStatus(els.browseStatus, tip, false);
   } catch (e) {
-    picaSetStatus(els.browseStatus, picaFormatError(e, '搜索失败'));
+    picaSetStatus(els.browseStatus, picaFormatError(e, opts.doujinOnly ? '同人搜索失败' : '搜索失败'), false);
   }
 }
 
-async function picaOpenDetail(bookId) {
-  const id = String(bookId || '').trim();
+async function picaOpenDetail(mangaId) {
+  const id = String(mangaId || '').trim();
   if (!id) return;
   picaState.bookId = id;
   picaSetView('detail');
   const els = picaEls();
-  picaSetStatus(els.detailStatus, '加载详情…');
+  picaSetStatus(els.detailStatus, '加载详情与章节…', true);
   if (els.epList) els.epList.innerHTML = '';
+
   try {
-    const detailRes = await picaFetchJson('comics/' + encodeURIComponent(id), 'GET');
-    const comic = (detailRes && detailRes.data && detailRes.data.comic) || detailRes.data || {};
-    picaState.detail = comic;
-    if (els.detailTitle) els.detailTitle.textContent = comic.title || '未命名';
+    const cached = (picaState.comics || []).find(function (c) { return c.id === id; });
+    let detail = cached || null;
+    if (!detail) {
+      const one = await mdFetchJson(MD_API + '/manga/' + encodeURIComponent(id) + '?includes[]=cover_art');
+      const normalized = mdNormalizeMangaList({ data: one && one.data ? [one.data] : [] });
+      detail = normalized[0] || { id: id, title: '未命名', cover: '' };
+    }
+    picaState.detail = detail;
+    if (els.detailTitle) els.detailTitle.textContent = detail.title || '未命名';
     if (els.detailMeta) {
       els.detailMeta.textContent =
-        (comic.author ? '作者：' + comic.author + ' · ' : '') +
-        (comic.chineseTeam ? comic.chineseTeam + ' · ' : '') +
-        (comic.pagesCount != null ? comic.pagesCount + ' 页 · ' : '') +
-        (comic.epsCount != null ? comic.epsCount + ' 话' : '');
+        [detail.status, detail.year ? String(detail.year) : ''].filter(Boolean).join(' · ') || 'MangaDex';
     }
     if (els.detailCover) {
-      els.detailCover.src = picaFileUrl(comic.thumb);
+      els.detailCover.src = detail.cover || '';
       els.detailCover.setAttribute('referrerpolicy', 'no-referrer');
     }
-    if (els.heading) els.heading.textContent = comic.title || '漫画详情';
+    if (els.heading) els.heading.textContent = detail.title || '漫画详情';
 
-    const epsRes = await picaFetchJson('comics/' + encodeURIComponent(id) + '/eps?page=1', 'GET');
-    const docs =
-      (epsRes && epsRes.data && epsRes.data.eps && epsRes.data.eps.docs) ||
-      (epsRes && epsRes.data && epsRes.data.eps) ||
-      [];
-    picaState.eps = Array.isArray(docs) ? docs : [];
+    const feedQs =
+      'translatedLanguage[]=zh' +
+      '&translatedLanguage[]=zh-hk' +
+      '&order[chapter]=asc' +
+      '&limit=100' +
+      '&' + mdContentRatingQs();
+    const feed = await mdFetchJson(
+      MD_API + '/manga/' + encodeURIComponent(id) + '/feed?' + feedQs
+    );
+    const chapters = Array.isArray(feed && feed.data) ? feed.data : [];
+    picaState.eps = chapters.map(function (ch) {
+      const attrs = (ch && ch.attributes) || {};
+      const chap = attrs.chapter != null ? String(attrs.chapter) : '';
+      const title = attrs.title || '';
+      const label =
+        (chap ? ('第 ' + chap + ' 话') : '章节') +
+        (title ? (' · ' + title) : '');
+      return {
+        id: ch.id,
+        chapter: chap,
+        title: label,
+        volume: attrs.volume,
+        lang: attrs.translatedLanguage,
+      };
+    }).filter(function (x) { return x.id; });
+
     if (els.epList) {
       els.epList.innerHTML = '';
-      picaState.eps.forEach(function (ep) {
-        const order = ep.order != null ? ep.order : ep.ep;
-        const title = ep.title || ('第 ' + order + ' 话');
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'pica-ep-btn';
-        btn.dataset.order = String(order);
-        btn.textContent = title;
-        els.epList.appendChild(btn);
-      });
+      if (!picaState.eps.length) {
+        els.epList.innerHTML = '<div class="pica-empty">暂无中文章节</div>';
+      } else {
+        picaState.eps.forEach(function (ep) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pica-ep-btn';
+          btn.dataset.chapterId = ep.id;
+          btn.textContent = ep.title;
+          els.epList.appendChild(btn);
+        });
+      }
     }
-    picaSetStatus(els.detailStatus, picaState.eps.length ? ('共 ' + picaState.eps.length + ' 话') : '暂无章节');
+    picaSetStatus(
+      els.detailStatus,
+      picaState.eps.length ? ('共 ' + picaState.eps.length + ' 话（中文）') : '暂无中文章节',
+      false
+    );
   } catch (e) {
-    picaSetStatus(els.detailStatus, picaFormatError(e, '详情加载失败'));
+    picaSetStatus(els.detailStatus, picaFormatError(e, '详情加载失败'), false);
   }
 }
 
@@ -1135,49 +759,36 @@ function picaSetReaderChrome(visible) {
   if (els.readerProgress) els.readerProgress.classList.toggle('is-hide', !visible);
 }
 
-async function picaOpenReader(bookId, order, title) {
-  const id = String(bookId || picaState.bookId || '').trim();
-  const epOrder = Number(order) || 1;
-  if (!id) return;
-  picaState.bookId = id;
-  picaState.epOrder = epOrder;
-  picaState.epTitle = title || ('第 ' + epOrder + ' 话');
+async function picaOpenReader(chapterId, title) {
+  const cid = String(chapterId || '').trim();
+  if (!cid) return;
+  picaState.chapterId = cid;
+  picaState.epTitle = title || '阅读中';
   picaSetView('reader');
   picaSetReaderChrome(true);
   const els = picaEls();
   if (els.readerTitle) els.readerTitle.textContent = picaState.epTitle;
   if (els.readerStream) {
-    els.readerStream.innerHTML = '<div style="padding:40px;text-align:center;opacity:.7;">加载页面中…</div>';
+    els.readerStream.innerHTML =
+      '<div class="pica-empty"><span class="pica-spinner" style="display:inline-block;margin-bottom:10px;"></span><br/>加载页面中…</div>';
   }
   if (els.readerBar) els.readerBar.style.width = '0%';
 
   try {
-    const allPages = [];
-    let page = 1;
-    let pagesTotal = 1;
-    do {
-      const res = await picaFetchJson(
-        'comics/' + encodeURIComponent(id) + '/order/' + encodeURIComponent(epOrder) + '/pages?page=' + page,
-        'GET'
-      );
-      const pagesObj = (res && res.data && res.data.pages) || {};
-      const docs = pagesObj.docs || [];
-      pagesTotal = Number(pagesObj.pages) || 1;
-      for (let i = 0; i < docs.length; i++) {
-        const media = docs[i] && (docs[i].media || docs[i]);
-        const url = picaFileUrl(media);
-        if (url) allPages.push(url);
-      }
-      page += 1;
-    } while (page <= pagesTotal && page <= 40);
-
+    const atHome = await mdFetchJson(MD_API + '/at-home/server/' + encodeURIComponent(cid));
+    const baseUrl = String((atHome && atHome.baseUrl) || '').replace(/\/$/, '');
+    const chapter = (atHome && atHome.chapter) || {};
+    const hash = chapter.hash || '';
+    const pageFiles = Array.isArray(chapter.data) ? chapter.data : [];
+    if (!baseUrl || !hash || !pageFiles.length) {
+      throw new Error('章节图片列表为空');
+    }
+    const allPages = pageFiles.map(function (file) {
+      return baseUrl + '/data/' + hash + '/' + file;
+    });
     picaState.pages = allPages;
     if (!els.readerStream) return;
     els.readerStream.innerHTML = '';
-    if (!allPages.length) {
-      els.readerStream.innerHTML = '<div style="padding:40px;text-align:center;opacity:.7;">本章暂无图片</div>';
-      return;
-    }
     allPages.forEach(function (url, idx) {
       const img = document.createElement('img');
       img.alt = 'p' + (idx + 1);
@@ -1191,8 +802,9 @@ async function picaOpenReader(bookId, order, title) {
   } catch (e) {
     if (els.readerStream) {
       els.readerStream.innerHTML =
-        '<div style="padding:40px;text-align:center;opacity:.8;line-height:1.5;word-break:break-word;">' +
-        picaEsc(picaFormatError(e, '章节加载失败')) + '</div>';
+        '<div class="pica-empty" style="word-break:break-word;">' +
+        picaEsc(picaFormatError(e, '章节加载失败')) +
+        '</div>';
     }
   }
 }
@@ -1228,35 +840,9 @@ function picaBindUi(root) {
     try { e.stopPropagation(); } catch (_) {}
   }
 
-  /* 冒泡阶段拦截：不挡子元素点击，只阻止冒泡到短视频层 */
   ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointermove', 'pointerup', 'click', 'wheel'].forEach(function (evName) {
-    root.addEventListener(evName, function (e) {
-      stop(e);
-    }, { passive: true });
+    root.addEventListener(evName, function (e) { stop(e); }, { passive: true });
   });
-
-  if (els.topbar) {
-    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup', 'click'].forEach(function (evName) {
-      els.topbar.addEventListener(evName, function (e) {
-        stop(e);
-      }, { passive: true });
-    });
-  }
-  if (els.loginOverlay) {
-    ['touchstart', 'touchmove', 'touchend', 'pointerdown', 'pointerup', 'click'].forEach(function (evName) {
-      els.loginOverlay.addEventListener(evName, function (e) {
-        stop(e);
-      }, { passive: true });
-    });
-    els.loginOverlay.addEventListener('click', function (e) {
-      if (e.target === els.loginOverlay) {
-        e.preventDefault();
-        stop(e);
-        /* 无 Token 时不允许点遮罩关掉 */
-        if (picaGetToken()) picaShowLoginOverlay(false);
-      }
-    });
-  }
 
   if (els.close) {
     els.close.addEventListener('click', function (e) {
@@ -1268,137 +854,66 @@ function picaBindUi(root) {
       e.preventDefault(); stop(e); picaGoBack();
     });
   }
-  if (els.account) {
-    els.account.addEventListener('click', function (e) {
-      e.preventDefault(); stop(e);
-      if (typeof window.showPicacgLoginModal === 'function') {
-        window.showPicacgLoginModal(e);
-      } else {
-        picaShowLoginOverlay(true);
-      }
-    });
+  function isDoujinTabOn() {
+    const on = root.querySelector('.pica-tabs button.is-on');
+    return !!(on && on.getAttribute('data-tab') === 'doujin');
   }
-  if (els.loginDismiss) {
-    els.loginDismiss.addEventListener('click', function (e) {
-      e.preventDefault(); stop(e);
-      if (!picaGetToken()) {
-        picaSetStatus(els.loginStatus, '请先登录或粘贴 Token');
-        return;
-      }
-      picaShowLoginOverlay(false);
-    });
-  }
-  if (els.btnLogin) {
-    els.btnLogin.addEventListener('click', async function (e) {
-      e.preventDefault(); stop(e);
-      const manual = els.tokenInput && els.tokenInput.value.trim();
-      const email = els.email && els.email.value.trim();
-      const password = els.password && els.password.value;
-      picaSetStatus(els.loginStatus, '处理中…');
-      try {
-        if (manual) {
-          picaSaveToken(manual);
-          picaSetStatus(els.loginStatus, 'Token 已保存');
-          picaShowToast('Token 已保存');
-          picaShowLoginOverlay(false);
-          picaSetView('browse');
-          await picaLoadHot();
-          return;
-        }
-        if (!email || !password) {
-          picaSetStatus(els.loginStatus, '请填写账号密码，或粘贴 Token');
-          return;
-        }
-        await picaLogin(email, password);
-        picaSetStatus(els.loginStatus, '登录成功');
-        picaShowToast('登录成功');
-        picaShowLoginOverlay(false);
-        picaSetView('browse');
-        await picaLoadHot();
-      } catch (err) {
-        picaSetStatus(els.loginStatus, picaFormatError(err, '登录失败'));
-      }
-    });
-  }
-  if (els.btnTest) {
-    els.btnTest.addEventListener('click', async function (e) {
-      e.preventDefault(); stop(e);
-      const manual = els.tokenInput && els.tokenInput.value.trim();
-      if (manual) picaSaveToken(manual);
-      picaSetStatus(els.loginStatus, '测试连接中…');
-      try {
-        const data = await picaTestConnection();
-        const name =
-          (data && data.data && data.data.user && (data.data.user.name || data.data.user.email)) ||
-          '已连接';
-        picaSetStatus(els.loginStatus, '连接成功 · ' + name);
-        picaShowToast('测试连接成功');
-      } catch (err) {
-        picaSetStatus(els.loginStatus, picaFormatError(err, '测试连接失败'));
-      }
-    });
-  }
-  if (els.btnClear) {
-    els.btnClear.addEventListener('click', function (e) {
-      e.preventDefault(); stop(e);
-      picaClearToken();
-      if (els.tokenInput) els.tokenInput.value = '';
-      picaSetStatus(els.loginStatus, '已清除 Token');
-      picaShowLoginOverlay(true);
-    });
-  }
+
   if (els.btnSearch) {
     els.btnSearch.addEventListener('click', function (e) {
       e.preventDefault(); stop(e);
-      picaSearch(els.searchInput && els.searchInput.value);
+      picaSearch(els.searchInput && els.searchInput.value, { doujinOnly: isDoujinTabOn() });
     });
   }
   if (els.searchInput) {
     els.searchInput.addEventListener('keydown', function (e) {
-      stop(e);
       if (e.key === 'Enter') {
         e.preventDefault();
-        picaSearch(els.searchInput.value);
+        picaSearch(els.searchInput.value, { doujinOnly: isDoujinTabOn() });
       }
     });
   }
-  if (els.root) {
-    const tabs = els.root.querySelector('.pica-tabs');
-    if (tabs) {
-      tabs.addEventListener('click', function (e) {
-        const btn = e.target && e.target.closest ? e.target.closest('button[data-tab]') : null;
-        if (!btn) return;
-        e.preventDefault(); stop(e);
-        const tab = btn.getAttribute('data-tab');
-        const all = tabs.querySelectorAll('button');
-        for (let i = 0; i < all.length; i++) all[i].classList.toggle('is-on', all[i] === btn);
-        if (tab === 'hot') picaLoadHot();
-        else if (tab === 'search') {
-          if (picaState.keyword) picaSearch(picaState.keyword);
-          else if (els.searchInput) els.searchInput.focus();
-        }
-      });
-    }
+
+  const tabs = root.querySelectorAll('.pica-tabs button');
+  for (let i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener('click', function (e) {
+      e.preventDefault(); stop(e);
+      const tab = this.getAttribute('data-tab');
+      for (let j = 0; j < tabs.length; j++) {
+        tabs[j].classList.toggle('is-on', tabs[j] === this);
+      }
+      if (tab === 'hot') picaLoadHot();
+      else if (tab === 'doujin') {
+        const kw = els.searchInput && els.searchInput.value.trim();
+        if (kw) picaSearch(kw, { doujinOnly: true });
+        else picaLoadDoujin();
+      } else if (tab === 'search') {
+        if (picaState.keyword) picaSearch(picaState.keyword);
+        else picaSetStatus(els.browseStatus, '输入关键词后搜索', false);
+      }
+    });
   }
+
   if (els.grid) {
     els.grid.addEventListener('click', function (e) {
-      const card = e.target && e.target.closest ? e.target.closest('.pica-comic') : null;
+      const card = e.target && e.target.closest && e.target.closest('.pica-comic');
       if (!card) return;
       e.preventDefault(); stop(e);
-      picaOpenDetail(card.getAttribute('data-id'));
+      picaOpenDetail(card.dataset.id);
     });
   }
   if (els.epList) {
     els.epList.addEventListener('click', function (e) {
-      const btn = e.target && e.target.closest ? e.target.closest('.pica-ep-btn') : null;
+      const btn = e.target && e.target.closest && e.target.closest('.pica-ep-btn');
       if (!btn) return;
       e.preventDefault(); stop(e);
-      picaOpenReader(picaState.bookId, btn.getAttribute('data-order'), btn.textContent);
+      picaOpenReader(btn.dataset.chapterId, btn.textContent);
     });
   }
   if (els.readerBack) {
     els.readerBack.addEventListener('click', function (e) {
-      e.preventDefault(); stop(e); picaGoBack();
+      e.preventDefault(); stop(e);
+      picaSetView('detail');
     });
   }
   if (els.readerTap) {
@@ -1410,27 +925,16 @@ function picaBindUi(root) {
 }
 
 export async function openPicacgApp() {
-  /* 严格互斥：先彻底隐藏并清空视频层 */
   picaHideVideoLayer();
   const root = picaBuildDom();
-  picaState.open = true;
-  picaState.token = picaGetToken();
   root.classList.add('is-open');
   root.setAttribute('aria-hidden', 'false');
   root.style.setProperty('display', 'flex', 'important');
   root.style.setProperty('z-index', '100050', 'important');
   root.style.setProperty('pointer-events', 'auto', 'important');
-  root.style.setProperty('visibility', 'visible', 'important');
-
+  picaState.open = true;
   picaSetView('browse');
-  if (picaState.token) {
-    await picaLoadHot();
-  } else {
-    picaShowLoginOverlay(true);
-    const els = picaEls(root);
-    picaSetStatus(els.browseStatus, '请先登录 PicACG');
-    picaSetStatus(els.loginStatus, '请登录或粘贴 Token');
-  }
+  await picaLoadHot();
 }
 
 export function closePicacgApp() {
@@ -1439,13 +943,9 @@ export function closePicacgApp() {
   if (els.readerStream) {
     try { els.readerStream.innerHTML = ''; } catch (_) {}
   }
-  picaShowLoginOverlay(false);
   try {
     const authModal = document.getElementById('picacg-auth-modal');
-    if (authModal) {
-      authModal.classList.remove('is-open');
-      authModal.style.display = 'none';
-    }
+    if (authModal) authModal.remove();
     const authBd = document.getElementById('picacg-auth-backdrop');
     if (authBd) authBd.remove();
   } catch (_) {}
@@ -1456,7 +956,6 @@ export function closePicacgApp() {
   }
   picaState.open = false;
   picaState.view = 'browse';
-  /* 切回视频应用容器 */
   picaRestoreVideoLayer();
 }
 
@@ -1474,122 +973,14 @@ try {
   window.closePicacgApp = closePicacgApp;
   window.togglePicacgApp = togglePicacgApp;
   window.isPicacgOpen = isPicacgOpen;
-
-  window.loadPicacgHome = function () {
-    try {
-      picaLoadHot();
-    } catch (_) {}
-  };
-
-  window.doPicacgSignIn = async function () {
-    const modal = document.getElementById('picacg-auth-modal');
-    if (!modal) return;
-    const emailEl = modal.querySelector('#pica-email-input');
-    const pwdEl = modal.querySelector('#pica-pwd-input');
-    const email = emailEl ? emailEl.value.trim() : '';
-    const password = pwdEl ? pwdEl.value : '';
-    if (!email || !password) {
-      alert('请填写账号密码，或粘贴 Token');
-      return;
-    }
-    try {
-      await picaLogin(email, password);
-      alert('登录成功！');
-      modal.classList.remove('is-open');
-      modal.style.display = 'none';
-      if (window.loadPicacgHome) window.loadPicacgHome();
-    } catch (err) {
-      alert(picaFormatError(err, '登录失败'));
-    }
-  };
-
-  window.showPicacgLoginModal = function (e) {
-    if (e) { e.preventDefault(); e.stopPropagation(); }
-    try { picaEnsureStyle(); } catch (_) {}
-    /* 清理旧独立遮罩 */
-    try {
-      const oldBd = document.getElementById('picacg-auth-backdrop');
-      if (oldBd) oldBd.remove();
-    } catch (_) {}
-
-    let modal = document.getElementById('picacg-auth-modal');
-    /* 旧版半截居中结构：强制重建 */
-    if (modal && !modal.querySelector('.picacg-auth-card')) {
-      try { modal.remove(); } catch (_) {}
-      modal = null;
-    }
-    if (!modal) {
-      modal = document.createElement('div');
-      modal.id = 'picacg-auth-modal';
-      modal.innerHTML = `
-        <div class="picacg-auth-card" role="dialog" aria-label="PicACG 账号授权">
-          <h3>PicACG 账号授权</h3>
-          <input id="pica-token-input" type="text" placeholder="粘贴 Token（若有）" autocomplete="off" spellcheck="false" />
-          <input id="pica-email-input" type="text" placeholder="哔咔账号 / 邮箱" autocomplete="username" />
-          <input id="pica-pwd-input" type="password" placeholder="密码" autocomplete="current-password" />
-          <div class="picacg-auth-actions">
-            <button type="button" id="pica-close-login">取消</button>
-            <button type="button" id="pica-submit-login">保存并登录</button>
-          </div>
-        </div>
-      `;
-      document.body.appendChild(modal);
-
-      function hideAuthModal() {
-        modal.classList.remove('is-open');
-        modal.style.display = 'none';
-      }
-
-      /* 点击遮罩外部（非卡片）关闭 */
-      modal.addEventListener('click', function (ev) {
-        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-        if (ev && ev.target === modal) hideAuthModal();
-      });
-      const card = modal.querySelector('.picacg-auth-card');
-      if (card) {
-        card.addEventListener('click', function (ev) {
-          if (ev) ev.stopPropagation();
-        });
-      }
-
-      modal.querySelector('#pica-close-login').onclick = function (ev) {
-        if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-        hideAuthModal();
-      };
-      modal.querySelector('#pica-submit-login').onclick = function () {
-        const tokenEl = modal.querySelector('#pica-token-input');
-        const token = tokenEl ? tokenEl.value.trim() : '';
-        if (token) {
-          localStorage.setItem('picacg_user_token', token);
-          picaState.token = token;
-          alert('Token 保存成功！');
-          hideAuthModal();
-          if (window.loadPicacgHome) window.loadPicacgHome();
-        } else {
-          if (window.doPicacgSignIn) window.doPicacgSignIn();
-        }
-      };
-    }
-    modal.classList.add('is-open');
-    modal.style.display = 'flex';
-    const currentToken = localStorage.getItem('picacg_user_token') || '';
-    const tokenInput = modal.querySelector('#pica-token-input');
-    if (tokenInput) tokenInput.value = currentToken;
-  };
-
-  /* 兼容旧内联绑定 */
-  window.__picaOpenLogin = function (e) {
-    if (typeof window.showPicacgLoginModal === 'function') {
-      window.showPicacgLoginModal(e);
-    }
-    return false;
-  };
+  window.loadPicacgHome = picaLoadHot;
+  /* 旧授权入口置空，避免残留内联调用报错 */
+  window.showPicacgLoginModal = function () {};
+  window.doPicacgSignIn = function () {};
+  window.__picaOpenLogin = function () { return false; };
   window.__picaCloseApp = function (e) {
     try {
-      if (e) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      if (e) { e.preventDefault(); e.stopPropagation(); }
     } catch (_) {}
     closePicacgApp();
     return false;

@@ -188,13 +188,27 @@
     html, body {
       width: 100%;
       height: 100%;
-      overflow: visible;
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink);
       /* 桌宠窗必须全透明，避免与 Alpha 边缘混出白边/亮色虚影 */
       background: transparent !important;
       user-select: none;
       -webkit-user-select: none;
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    #stage::-webkit-scrollbar,
+    #pet::-webkit-scrollbar,
+    #pet *::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      background: transparent !important;
     }
 
     /* 已废除咬鼠标藏光标：保留空规则避免旧 class 残留产生影响 */
@@ -213,7 +227,11 @@
       position: relative;
       width: 100%;
       height: 100%;
-      overflow: visible !important;
+      max-width: 100%;
+      max-height: 100%;
+      overflow: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
 
     /* ---------- 宠物（移动触屏版：约原尺寸 70%，默认偏右下） ---------- */
@@ -234,6 +252,8 @@
       padding: 0 !important;
       margin: 0 !important;
       pointer-events: none !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
     /* 酒馆 iframe 内：猫咪固定居中，全屏位移由宿主 #eight-tail-pet-mobile-root 承担 */
     html.st-extension-host #pet {
@@ -247,7 +267,9 @@
     html.st-extension-host #stage,
     html.st-extension-host html,
     html.st-extension-host body {
-      overflow: visible !important;
+      overflow: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
     #pet.dragging {
       transition: none !important;
@@ -265,7 +287,9 @@
       overscroll-behavior: none;
       touch-action: manipulation;
       background: transparent !important;
-      overflow: visible !important;
+      overflow: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
       border: 0 !important;
     }
     html.st-extension-host #stage {
@@ -273,7 +297,9 @@
       height: 100%;
       touch-action: none;
       overscroll-behavior: none;
-      overflow: visible !important;
+      overflow: hidden !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
       border: 0 !important;
       background: transparent !important;
     }
@@ -285,8 +311,9 @@
       background: transparent !important;
       margin: 0 !important;
       padding: 0 !important;
+      overflow: hidden !important;
     }
-    /* 外层大容器穿透：空白透明区不拦截酒馆按钮 */
+    /* 外层大容器穿透：空白透明区不拦截酒馆按钮；禁止溢出滚动条 */
     html.st-extension-host #pet,
     #pet.pet-float-wrapper,
     #pet {
@@ -296,6 +323,9 @@
       background: transparent !important;
       border: 0 !important;
       box-shadow: none !important;
+      overflow: visible !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
     }
     /* 真正需要交互的子元素单独开启点击 */
     html.st-extension-host #cat-wrap,
@@ -1077,6 +1107,34 @@
     #fav-star {
       pointer-events: auto !important;
       touch-action: manipulation !important;
+    }
+
+    /* 彻底隐藏桌宠相关原生滚动条（侧钮轻微溢出也不显示白条） */
+    #stage,
+    #pet,
+    #pet .picacg-top-actions,
+    #chat-spark,
+    #memo-btn,
+    #food-btn,
+    #game-btn,
+    #btn-pet-quit,
+    .pet-sidebar,
+    .pet-action-btn-group,
+    .pet-action-menu {
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    #stage::-webkit-scrollbar,
+    #pet::-webkit-scrollbar,
+    #pet::-webkit-scrollbar-thumb,
+    #pet::-webkit-scrollbar-track,
+    .pet-sidebar::-webkit-scrollbar,
+    .pet-action-btn-group::-webkit-scrollbar,
+    .pet-action-menu::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+      background: transparent !important;
     }
 
     /* ✨ 触发对话：与抓鼠标解耦 */
@@ -3896,7 +3954,7 @@
         <button type="button" id="fav-star" title="收藏这句" aria-label="收藏">★</button>
       </div>
       <button type="button" id="chat-spark" title="单击冒泡 · 长按对话 · 双击偷看酒馆" aria-label="单击冒泡 / 长按对话 / 双击偷看酒馆">✨</button>
-      <button type="button" id="memo-btn" class="app-hub-btn" title="单击：短视频 · 双击：PicACG 漫画 · 长按：简报" aria-label="单击短视频，双击漫画" data-hub-only="1">📱</button>
+      <button type="button" id="memo-btn" class="app-hub-btn" title="单击：短视频 · 双击：漫画 Manga · 长按：简报" aria-label="单击短视频，双击漫画" data-hub-only="1">📱</button>
       <button type="button" id="food-btn" title="单击：今天吃什么 · 双击：图片投喂栏" aria-label="今天吃什么">🍜</button>
       <button type="button" id="game-btn" title="摸鱼游戏中心" aria-label="摸鱼游戏中心">🎮</button>
       <button type="button" id="btn-pet-quit" class="action-btn pet-quit-btn" title="退出桌宠" aria-label="退出桌宠" tabindex="-1">🚪</button>
@@ -4021,7 +4079,7 @@
       </div>
       <ul id="memo-list" aria-label="待办列表"></ul>
       <div id="memo-empty" data-i18n="memo.empty">还没有备忘，写一句给未来的自己吧</div>
-      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击 📱 开短视频；双击 📱 开 PicACG；长按可生成今日简报。</p>
+      <p class="field-hint" style="margin:8px 10px 10px;">提示：单击 📱 开短视频；双击 📱 开漫画；长按可生成今日简报。</p>
     </div>
 
     <div id="news-brief-modal" role="dialog" aria-label="今日网络简报" aria-hidden="true">
@@ -4042,7 +4100,7 @@
       <button type="button" class="mobile-safe-close-btn" id="app-hub-close" title="关闭" aria-label="关闭">✕</button>
       <div class="app-hub-inner">
         <h3 class="app-hub-title">应用与媒体中心</h3>
-        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / PicACG / 抖音小红书<br />桌宠 📱 单击短视频 · 双击漫画</p>
+        <p class="app-hub-sub">点图标进入 · YouTube / Pornhub / 漫画 / 抖音小红书<br />桌宠 📱 单击短视频 · 双击漫画</p>
         <div id="app-hub-grid" aria-label="应用列表">
           <button type="button" class="app-hub-icon" data-app="youtube" data-action="embed-yt">
             <span class="app-emoji" aria-hidden="true">▶</span>
@@ -4056,8 +4114,8 @@
           </button>
           <button type="button" class="app-hub-icon" data-app="picacg" data-action="open-picacg">
             <span class="app-emoji" aria-hidden="true">📖</span>
-            <span class="app-name">PicACG</span>
-            <span class="app-open-hint">哔咔漫画</span>
+            <span class="app-name">漫画</span>
+            <span class="app-open-hint">MangaDex</span>
           </button>
           <button type="button" class="app-hub-icon" data-app="douyin" data-action="external-app"
             data-scheme="snssdk1128://feed" data-url="https://www.douyin.com/" data-murl="https://m.douyin.com/">
@@ -4078,7 +4136,7 @@
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-presentation"
             referrerpolicy="strict-origin-when-cross-origin"></iframe>
-          <div id="app-hub-player-hint">点上方 YouTube / Pornhub / PicACG 打开</div>
+          <div id="app-hub-player-hint">点上方 YouTube / Pornhub / 漫画 打开</div>
         </div>
       </div>
     </div>
@@ -12979,9 +13037,9 @@
         const memoPanelEl = document.getElementById("memo-panel");
         if (memoPanelEl) memoPanelEl.classList.remove("open");
         if (requestOpenPicacg()) {
-          try { showToast("PicACG 漫画", 1000); } catch (_) {}
+          try { showToast("漫画 Manga", 1000); } catch (_) {}
         } else {
-          try { showToast("PicACG 未加载，请刷新扩展", 1800); } catch (_) {}
+          try { showToast("漫画模块未加载，请刷新扩展", 1800); } catch (_) {}
         }
         markActivity();
       }
@@ -13183,10 +13241,10 @@
             return false;
           }
           if (openHostPicacg()) {
-            try { showToast("PicACG 哔咔", 1000); } catch (_) {}
+            try { showToast("漫画 Manga", 1000); } catch (_) {}
             return;
           }
-          try { showToast("PicACG 模块未加载，请刷新扩展", 1800); } catch (_) {}
+          try { showToast("漫画模块未加载，请刷新扩展", 1800); } catch (_) {}
           return;
         }
 

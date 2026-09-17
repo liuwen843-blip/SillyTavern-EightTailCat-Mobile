@@ -16,7 +16,7 @@
   pointer-events: none !important;
   background: transparent !important;
   border: 0 !important;
-  overflow: visible !important;
+  overflow: hidden !important;
   display: block !important;
   visibility: visible !important;
   user-select: none;
@@ -24,6 +24,18 @@
   touch-action: none;
   will-change: transform;
   transition: none !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+#eight-tail-pet-mobile-root::-webkit-scrollbar,
+#pet-container-mobile::-webkit-scrollbar,
+#eight-tail-pet-mobile-root iframe::-webkit-scrollbar,
+#pet-container-mobile iframe::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 #eight-tail-pet-mobile-root.is-dragging,
@@ -36,6 +48,7 @@
 #pet-container-mobile.eighttailcat-expanded {
   width: min(96vw, 520px) !important;
   height: min(80vh, 720px) !important;
+  overflow: hidden !important;
 }
 
 #eight-tail-pet-mobile-root.eighttailcat-hidden,
@@ -59,7 +72,9 @@
   touch-action: none;
   /* 默认穿透：由 index.js 在命中猫咪/按钮时临时开启 */
   pointer-events: none !important;
-  overflow: visible !important;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
 #eight-tail-pet-mobile-root iframe.etc-pe-on,

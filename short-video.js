@@ -978,7 +978,7 @@ function svBuildDom() {
     '<div id="eight-tail-sv-apps" role="toolbar" aria-label="应用入口">',
     '  <button type="button" class="etc-sv-app" data-app="youtube"><span class="emoji">▶</span><span class="name">YouTube</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="pornhub"><span class="emoji">🔥</span><span class="name">Pornhub</span></button>',
-    '  <button type="button" class="etc-sv-app" data-app="picacg"><span class="emoji">📖</span><span class="name">PicACG</span></button>',
+    '  <button type="button" class="etc-sv-app" data-app="picacg"><span class="emoji">📖</span><span class="name">漫画</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="douyin" data-action="external" data-scheme="snssdk1128://feed" data-web="https://www.douyin.com/"><span class="emoji">🎵</span><span class="name">抖音</span></button>',
     '  <button type="button" class="etc-sv-app" data-app="xiaohongshu" data-action="external" data-scheme="xhsdiscover://home" data-web="https://www.xiaohongshu.com/explore"><span class="emoji">📕</span><span class="name">小红书</span></button>',
     '</div>',
@@ -1646,7 +1646,7 @@ function svOnAppDockClick(btn) {
     try {
       window.postMessage({ type: 'eight-tail-open-picacg' }, '*');
     } catch (_) {}
-    svShowHint('正在打开 PicACG…', 1200);
+    svShowHint('正在打开漫画…', 1200);
   }
 }
 
