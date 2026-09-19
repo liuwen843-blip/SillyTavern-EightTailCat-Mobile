@@ -3452,6 +3452,15 @@
 
     .fav-item .btn-del {
       color: var(--danger);
+      position: relative;
+      z-index: 6;
+      pointer-events: auto !important;
+    }
+    #offline-list,
+    #btn-clear-all-dialogues {
+      position: relative;
+      z-index: 6;
+      pointer-events: auto !important;
     }
 
     .fav-item .btn-tts {
@@ -4520,7 +4529,7 @@
           <p class="field-hint">键盘感应 / 应用感知 / 小游戏会<strong>始终优先</strong>抽对应离线分类；开启本开关后，日常冒泡也优先走本地库。✨ 深度对话仍强制在线。</p>
           <div class="cfg-actions">
             <button type="button" class="action-btn primary" id="btn-gen-offline">🪄 依据人设一键生成全部分类台词</button>
-            <button type="button" class="action-btn ghost" id="btn-offline-clear" style="color:var(--danger)">一键清空</button>
+            <button type="button" class="action-btn ghost" id="btn-clear-all-dialogues" style="color:var(--danger);position:relative;z-index:6;pointer-events:auto;">一键清空</button>
           </div>
           <p class="field-hint">按当前人设成套生成：待机 / 键盘 / 应用 / 游戏，以及应用细分场景；全部以追加方式入库。</p>
           <div class="offline-tabs" id="offline-tabs" role="tablist" aria-label="离线台词分类"></div>
@@ -7885,11 +7894,30 @@
 
       function writeCustomDialoguesMirror(corpus, sceneLines, legacyLines) {
         try {
-          localStorage.setItem(CUSTOM_DIALOGUES_KEY, JSON.stringify({
-            offlineCorpus: corpus || emptyOfflineCorpus(),
+          const savedCorpus = corpus || emptyOfflineCorpus();
+          const payload = {
+            idle: (savedCorpus.idle_general || []).slice(),
+            keyboard: (savedCorpus.keyboard_activity || []).slice(),
+            app: (savedCorpus.app_activity || []).slice(),
+            game: (savedCorpus.game_interaction || []).slice(),
+            feed: (savedCorpus.feeding_activity || []).slice(),
+            offlineCorpus: savedCorpus,
             offlineSceneLines: sceneLines || {},
-            offlineLines: legacyLines || []
-          }));
+            offlineLines: legacyLines || (savedCorpus.idle_general || []).slice()
+          };
+          localStorage.setItem(CUSTOM_DIALOGUES_KEY, JSON.stringify(payload));
+          window.petDialogueData = {
+            idle_general: payload.idle.slice(),
+            keyboard_activity: payload.keyboard.slice(),
+            app_activity: payload.app.slice(),
+            game_interaction: payload.game.slice(),
+            feeding_activity: payload.feed.slice(),
+            idle: payload.idle.slice(),
+            keyboard: payload.keyboard.slice(),
+            app: payload.app.slice(),
+            game: payload.game.slice(),
+            feed: payload.feed.slice()
+          };
         } catch (_) {}
       }
 
@@ -8086,20 +8114,70 @@
         }
       }
 
-      function clearAllCustomDialogues() {
+      function renderDialogueList() {
+        renderOfflineList();
+      }
+      function updateDialogueCount() {
+        renderOfflineList();
+      }
+      window.renderDialogueList = renderDialogueList;
+      window.updateDialogueCount = updateDialogueCount;
+
+      function clearAllDialogues() {
         const empty = emptyOfflineCorpus();
-        store.offlineLines = [];
-        store.offlineCorpus = empty;
-        store.offlineSceneLines = {};
-        store = saveStore({
-          offlineLines: [],
-          offlineSceneLines: {},
-          offlineCorpus: empty
+        window.petDialogueData = {
+          idle_general: [],
+          keyboard_activity: [],
+          app_activity: [],
+          game_interaction: [],
+          feeding_activity: [],
+          idle: [],
+          keyboard: [],
+          app: [],
+          game: [],
+          feed: []
+        };
+        if (window.dialogueData) {
+          Object.keys(window.dialogueData).forEach(function (k) { window.dialogueData[k] = []; });
+        }
+        Object.keys(window.petDialogueData).forEach(function (k) {
+          window.petDialogueData[k] = [];
         });
+        if (store) {
+          store.offlineLines = [];
+          store.offlineCorpus = empty;
+          store.offlineSceneLines = {};
+        }
+        try {
+          localStorage.setItem("pet_custom_dialogues", JSON.stringify({
+            idle: [],
+            keyboard: [],
+            app: [],
+            game: [],
+            feed: [],
+            offlineCorpus: empty,
+            offlineLines: [],
+            offlineSceneLines: {}
+          }));
+        } catch (_) {}
+        try {
+          store = saveStore({
+            offlineLines: [],
+            offlineSceneLines: {},
+            offlineCorpus: empty
+          });
+        } catch (_) {}
         try {
           Object.keys(offlineRecentByCat).forEach(function (k) { delete offlineRecentByCat[k]; });
         } catch (_) {}
-        renderOfflineList();
+        renderDialogueList();
+        updateDialogueCount();
+        try { showToast("已清空离线台词库"); } catch (_) {}
+      }
+      window.clearAllDialogues = clearAllDialogues;
+
+      function clearAllCustomDialogues() {
+        clearAllDialogues();
       }
 
       function loadStore() {
@@ -12944,20 +13022,27 @@
       if (btnGenOffline) {
         btnGenOffline.addEventListener("click", function () { generateOfflineCorpus(); });
       }
-      const btnOfflineClear = document.getElementById("btn-offline-clear");
-      if (btnOfflineClear) {
-        btnOfflineClear.addEventListener("click", async function () {
-          const ok = await openCfgModal({
-            title: "一键清空台词库",
-            message: "确定清空全部离线分类台词与应用场景台词？此操作不可撤销。",
-            mode: "confirm",
-            okText: "清空"
-          });
-          if (!ok) return;
-          clearAllCustomDialogues();
-          showToast("已清空离线台词库");
-        });
+      function bindClearAllDialogues() {
+        const btn = document.getElementById("btn-clear-all-dialogues") ||
+          document.getElementById("btn-offline-clear");
+        if (!btn || btn.dataset.clearBound === "1") return;
+        btn.dataset.clearBound = "1";
+        btn.id = "btn-clear-all-dialogues";
+        btn.style.pointerEvents = "auto";
+        btn.style.position = "relative";
+        btn.style.zIndex = "6";
+        btn.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          clearAllDialogues();
+        }, true);
       }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", bindClearAllDialogues);
+      } else {
+        bindClearAllDialogues();
+      }
+      bindClearAllDialogues();
 
       function addOfflineLineToActiveTab(text) {
         const clipped = String(text || "").trim().slice(0, 40);
@@ -12989,39 +13074,39 @@
 
       function removeOfflineLineAtActiveTab(index, text) {
         store = loadStore();
-        const wanted = text == null ? null : String(text);
+        const wanted = text == null ? "" : String(text);
+        let corpus = getOfflineCorpus(store);
+        let scenes = Object.assign({}, store.offlineSceneLines || {});
         if (activeOfflineTab === "app_activity" && activeOfflineSceneTag) {
-          const scenes = Object.assign({}, store.offlineSceneLines || {});
           const next = (scenes[activeOfflineSceneTag] || []).slice();
           let at = index;
-          if (!(at >= 0 && at < next.length && (wanted == null || next[at] === wanted))) {
-            at = wanted == null ? -1 : next.indexOf(wanted);
-          }
+          if (!(at >= 0 && at < next.length)) at = wanted ? next.indexOf(wanted) : -1;
           if (at < 0 || at >= next.length) return;
           next.splice(at, 1);
           if (next.length) scenes[activeOfflineSceneTag] = next;
           else delete scenes[activeOfflineSceneTag];
-          store.offlineSceneLines = scenes;
-          store = saveStore({ offlineSceneLines: scenes });
         } else {
-          const corpus = getOfflineCorpus(store);
           const key = OFFLINE_CATEGORY_KEYS.indexOf(activeOfflineTab) >= 0 ? activeOfflineTab : "idle_general";
           const next = (corpus[key] || []).slice();
           let at = index;
-          if (!(at >= 0 && at < next.length && (wanted == null || next[at] === wanted))) {
-            at = wanted == null ? -1 : next.indexOf(wanted);
-          }
+          if (!(at >= 0 && at < next.length)) at = wanted ? next.indexOf(wanted) : -1;
           if (at < 0 || at >= next.length) return;
           next.splice(at, 1);
           corpus[key] = next;
-          store.offlineCorpus = corpus;
-          store.offlineLines = corpus.idle_general.slice();
-          store = saveStore({
-            offlineCorpus: corpus,
-            offlineLines: corpus.idle_general.slice()
-          });
         }
-        renderOfflineList();
+        store.offlineCorpus = corpus;
+        store.offlineLines = (corpus.idle_general || []).slice();
+        store.offlineSceneLines = scenes;
+        try {
+          writeCustomDialoguesMirror(corpus, scenes, store.offlineLines);
+        } catch (_) {}
+        store = saveStore({
+          offlineCorpus: corpus,
+          offlineLines: store.offlineLines,
+          offlineSceneLines: scenes
+        });
+        renderDialogueList();
+        updateDialogueCount();
       }
 
       const btnOfflineAdd = document.getElementById("btn-offline-add");
@@ -13053,6 +13138,15 @@
           renderOfflineList();
         });
       }
+      document.addEventListener("click", function (e) {
+        const del = e.target && e.target.closest ? e.target.closest("#offline-list button.btn-del[data-offline-i]") : null;
+        if (!del || del.dataset.deleting === "1") return;
+        del.dataset.deleting = "1";
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = parseInt(del.getAttribute("data-offline-i"), 10);
+        removeOfflineLineAtActiveTab(isNaN(idx) ? -1 : idx, null);
+      }, true);
       if (fields.offlineList) {
         fields.offlineList.addEventListener("click", function (e) {
           const ttsBtn = e.target.closest("button.btn-tts");
@@ -13064,15 +13158,14 @@
             previewLineTts(text || "", ttsBtn);
             return;
           }
-          const btn = e.target.closest("button.btn-del[data-offline-i], button[data-offline-i]");
+          const btn = e.target.closest("#offline-list button.btn-del[data-offline-i], button.btn-del[data-offline-i]");
           if (!btn || btn.classList.contains("btn-tts")) return;
           e.preventDefault();
           e.stopPropagation();
+          if (btn.dataset.deleting === "1") return;
+          btn.dataset.deleting = "1";
           const i = parseInt(btn.getAttribute("data-offline-i"), 10);
-          let lineText = "";
-          try { lineText = decodeURIComponent(btn.getAttribute("data-offline-text") || ""); } catch (_) {}
-          if (isNaN(i) && !lineText) return;
-          removeOfflineLineAtActiveTab(isNaN(i) ? -1 : i, lineText || null);
+          removeOfflineLineAtActiveTab(isNaN(i) ? -1 : i, null);
         });
       }
 
