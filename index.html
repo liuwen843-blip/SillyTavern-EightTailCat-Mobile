@@ -363,6 +363,10 @@
     html.st-extension-host #memo-panel.open *,
     html.st-extension-host #chat-panel.open,
     html.st-extension-host #chat-panel.open *,
+    html.st-extension-host #settings.open,
+    html.st-extension-host #settings.open *,
+    html.st-extension-host #settings.open,
+    html.st-extension-host #settings.open *,
     html.st-extension-host .mobile-fullscreen-view,
     html.st-extension-host .mobile-fullscreen-view *,
     html.st-extension-host #video-app-container.is-open,
@@ -3118,41 +3122,66 @@
       -webkit-app-region: no-drag;
     }
 
-    /* 移动端：底部抽屉式设置面板 */
+    /* 移动端：屏幕居中大卡片（不再贴在小窗左下角） */
     #settings {
-      position: absolute;
+      position: fixed;
+      top: 50%;
       left: 50%;
-      top: auto;
-      bottom: 0;
-      transform: translate(-50%, 12%) scale(0.98);
-      width: min(90vw, 520px);
-      max-width: 100%;
-      max-height: 80vh;
+      right: auto;
+      bottom: auto;
+      transform: translate(-50%, -50%) scale(0.98);
+      width: min(92vw, 420px);
+      max-width: min(92vw, 420px);
+      max-height: 82vh;
       height: auto;
-      min-height: min(52vh, 420px);
+      min-height: 0;
       display: none;
       flex-direction: column;
       background: var(--glass-strong);
       color: var(--text-main);
       backdrop-filter: blur(var(--glass-blur));
       -webkit-backdrop-filter: blur(var(--glass-blur));
-      border-radius: 18px 18px 0 0;
-      box-shadow: var(--shadow), 0 0 0 1px var(--border-color) inset;
+      border-radius: 16px;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
       z-index: 99999;
       opacity: 0;
-      transition: opacity 0.18s ease, transform 0.18s ease, background 0.2s ease, color 0.2s ease;
       overflow: hidden;
       user-select: text;
       -webkit-user-select: text;
       -webkit-overflow-scrolling: touch;
+      box-sizing: border-box;
     }
 
     #settings.open {
+      position: fixed !important;
+      top: 50% !important;
+      left: 50% !important;
+      right: auto !important;
+      bottom: auto !important;
+      transform: translate(-50%, -50%) !important;
+      width: min(92vw, 420px) !important;
+      max-width: min(92vw, 420px) !important;
+      max-height: 82vh !important;
+      height: auto !important;
+      min-height: 0 !important;
       display: flex !important;
-      opacity: 1;
-      transform: translate(-50%, 0) scale(1);
+      flex-direction: column !important;
+      border-radius: 16px !important;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45) !important;
+      z-index: 99999 !important;
+      overflow: hidden !important;
+      opacity: 1 !important;
       pointer-events: auto !important;
-      z-index: 99999;
+      box-sizing: border-box !important;
+    }
+
+    body.settings-open::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 12, 18, 0.46);
+      z-index: 99998;
+      pointer-events: auto !important;
     }
 
     #settings input,
@@ -3177,7 +3206,12 @@
       border-bottom: 1px solid var(--border-color);
       user-select: none;
       -webkit-user-select: none;
-      flex-shrink: 0;
+      flex: 0 0 auto;
+      height: 48px;
+      min-height: 48px;
+      max-height: 48px;
+      overflow: hidden;
+      box-sizing: border-box;
     }
 
     .settings-head h2 {
@@ -3201,10 +3235,14 @@
     .icon-btn:hover { filter: brightness(1.08); color: var(--ink); }
 
     .settings-body {
-      padding: 10px 14px 14px;
-      overflow-y: auto;
-      flex: 1;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      padding: 16px !important;
+      box-sizing: border-box !important;
       font-size: 12px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .section {
@@ -3351,14 +3389,25 @@
       z-index: 2;
     }
     .settings-footer .backup-row {
-      display: flex;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
       gap: 8px;
       margin-top: 8px;
     }
     .settings-footer .backup-row .action-btn {
       flex: 1 1 0;
       width: auto;
+      min-width: 0;
       padding: 10px 8px;
+      white-space: normal;
+      line-height: 1.3;
+    }
+    #settings #btn-export-config,
+    #settings #btn-import-config {
+      color: #142033 !important;
+      -webkit-text-fill-color: #142033 !important;
+      background: #e7eef8 !important;
+      border: 1px solid rgba(20, 32, 51, 0.18) !important;
     }
     .settings-footer .action-btn.save-all {
       width: 100%;
