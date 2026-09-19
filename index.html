@@ -365,8 +365,6 @@
     html.st-extension-host #chat-panel.open *,
     html.st-extension-host #settings.open,
     html.st-extension-host #settings.open *,
-    html.st-extension-host #settings.open,
-    html.st-extension-host #settings.open *,
     html.st-extension-host .mobile-fullscreen-view,
     html.st-extension-host .mobile-fullscreen-view *,
     html.st-extension-host #video-app-container.is-open,
@@ -3243,6 +3241,9 @@
       box-sizing: border-box !important;
       font-size: 12px;
       -webkit-overflow-scrolling: touch;
+    }
+    body:not(.settings-window) #settings.open .settings-body {
+      max-height: calc(82vh - 132px);
     }
 
     .section {
@@ -16960,6 +16961,7 @@
         try {
           fillSettingsForm();
         } catch (_) {}
+        notifyStHost({ type: "eighttailcat-expand", on: true, reason: "settings" });
         settingsEl.classList.add("open");
         body.classList.add("settings-open");
       }
@@ -17006,6 +17008,7 @@
         } catch (_) {}
         if (settingsEl) settingsEl.classList.remove("open");
         body.classList.remove("settings-open");
+        notifyStHost({ type: "eighttailcat-expand", on: false, reason: "settings" });
       }
 
       function bindSettingsWindowChrome() {

@@ -208,6 +208,33 @@ function defaultRightCenterPos(el) {
   };
 }
 
+function setSettingsOverlayExpanded(root, on) {
+  if (!root) return;
+  const frame = root.querySelector('iframe') || document.getElementById(FRAME_ID);
+  if (on) {
+    root.classList.add('eighttailcat-expanded');
+    root.style.setProperty('width', '100vw', 'important');
+    root.style.setProperty('height', '100vh', 'important');
+    root.style.setProperty('max-width', '100vw', 'important');
+    root.style.setProperty('max-height', '100vh', 'important');
+    root.style.setProperty('left', '0px', 'important');
+    root.style.setProperty('top', '0px', 'important');
+    root.style.setProperty('right', '0px', 'important');
+    root.style.setProperty('bottom', '0px', 'important');
+    root.style.setProperty('transform', 'none', 'important');
+    root.style.setProperty('overflow', 'hidden', 'important');
+    setIframePointerEvents(frame, true);
+    return;
+  }
+  root.classList.remove('eighttailcat-expanded');
+  ['width', 'height', 'max-width', 'max-height', 'right', 'bottom', 'transform'].forEach(function (prop) {
+    root.style.removeProperty(prop);
+  });
+  ensureOverlayOnBody(root);
+  if (!isRootHidden(root)) applySavedOrDefaultPos(root);
+  setIframePointerEvents(frame, false);
+}
+
 function centerPos(el) {
   const w = (el && el.offsetWidth) || 300;
   const h = (el && el.offsetHeight) || 400;
@@ -313,6 +340,7 @@ function isPetInteractiveHit(el) {
     if (el.closest('.cfg-modal.is-open') || el.closest('#game-modal.open')) return true;
     if (el.closest('#app-hub-modal.open') || el.closest('#feed-tray-modal.open')) return true;
     if (el.closest('#memo-panel.open') || el.closest('#chat-panel.open')) return true;
+    if (el.closest('#settings.open')) return true;
     if (el.closest('.mobile-fullscreen-view')) return true;
     if (el.closest('#video-app-container.is-open') || el.closest('#eight-tail-short-video-root.is-open')) return true;
   } catch (_) {}
@@ -483,7 +511,7 @@ function showPetCentered() {
   togglePetVisibility(true);
   requestAnimationFrame(function () {
     const el = getRoot();
-    if (!el) return;
+    if (!el || el.classList.contains('eighttailcat-expanded')) return;
     forceShowStyles(el);
     const c = centerPos(el);
     setOverlayPos(el, c.left, c.top);
@@ -603,13 +631,7 @@ function bindHostListenersOnce() {
     ) {
       togglePetVisibility();
     } else if (data.type === 'eighttailcat-expand') {
-      root.classList.toggle('eighttailcat-expanded', !!data.on);
-      if (data.on) {
-        const c = centerPos(root);
-        setOverlayPos(root, c.left, Math.max(EDGE_PAD, window.innerHeight - (root.offsetHeight || 360) - EDGE_PAD));
-      } else {
-        applySavedOrDefaultPos(root);
-      }
+      setSettingsOverlayExpanded(root, !!data.on);
     } else if (data.type === 'eighttailcat-open-settings') {
       openPetSettings();
     }
@@ -618,8 +640,12 @@ function bindHostListenersOnce() {
   window.addEventListener('resize', function () {
     const root = getRoot();
     if (root && !isRootHidden(root)) {
-      const cur = readOverlayPos(root);
-      setOverlayPos(root, cur.left, cur.top);
+      if (root.classList.contains('eighttailcat-expanded')) {
+        setSettingsOverlayExpanded(root, true);
+      } else {
+        const cur = readOverlayPos(root);
+        setOverlayPos(root, cur.left, cur.top);
+      }
     }
     clampDockPosition();
   });
