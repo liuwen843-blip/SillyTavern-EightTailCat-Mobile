@@ -3350,6 +3350,16 @@
       bottom: 0;
       z-index: 2;
     }
+    .settings-footer .backup-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .settings-footer .backup-row .action-btn {
+      flex: 1 1 0;
+      width: auto;
+      padding: 10px 8px;
+    }
     .settings-footer .action-btn.save-all {
       width: 100%;
       padding: 12px 14px;
@@ -4678,6 +4688,11 @@
       </div>
       <div class="settings-footer">
         <button type="button" class="action-btn primary save-all" id="btn-save-all" data-i18n="btn.saveAll">保存配置</button>
+        <div class="backup-row">
+          <button type="button" class="action-btn ghost" id="btn-export-config">导出全部配置</button>
+          <button type="button" class="action-btn ghost" id="btn-import-config">导入配置</button>
+        </div>
+        <input type="file" id="cfg-backup-file" accept=".json,application/json" hidden />
       </div>
     </div>
   </div>
@@ -7817,6 +7832,276 @@
         if (fields.visionModel) fields.visionModel.value = v.model || "gpt-4o";
       }
 
+
+      const USER_PERSONA_KEY = "pet_user_persona";
+      const CUSTOM_DIALOGUES_KEY = "pet_custom_dialogues";
+      let settingsHydrating = true;
+      let desktopConfigTimer = null;
+
+      function readUserPersonaMirror() {
+        try {
+          const v = localStorage.getItem(USER_PERSONA_KEY);
+          if (v != null) return String(v);
+        } catch (_) {}
+        return null;
+      }
+
+      function writeUserPersonaMirror(text) {
+        const v = String(text == null ? "" : text);
+        try { localStorage.setItem(USER_PERSONA_KEY, v); } catch (_) {}
+        try {
+          if (window.bridge && typeof window.bridge.saveUserPersona === "function") {
+            window.bridge.saveUserPersona(v);
+          }
+        } catch (_) {}
+        return v;
+      }
+
+      function getUserPersona() {
+        try {
+          const el = document.getElementById("cfg-user-persona");
+          if (el && document.activeElement === el) return String(el.value || "");
+        } catch (_) {}
+        const mirrored = readUserPersonaMirror();
+        if (mirrored != null) return mirrored;
+        try {
+          if (window.__petSettings && window.__petSettings.userPersona != null) {
+            return String(window.__petSettings.userPersona || "");
+          }
+        } catch (_) {}
+        return "";
+      }
+
+      function readCustomDialoguesMirror() {
+        try {
+          const raw = localStorage.getItem(CUSTOM_DIALOGUES_KEY);
+          if (raw == null) return null;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") return null;
+          return parsed;
+        } catch (_) {}
+        return null;
+      }
+
+      function writeCustomDialoguesMirror(corpus, sceneLines, legacyLines) {
+        try {
+          localStorage.setItem(CUSTOM_DIALOGUES_KEY, JSON.stringify({
+            offlineCorpus: corpus || emptyOfflineCorpus(),
+            offlineSceneLines: sceneLines || {},
+            offlineLines: legacyLines || []
+          }));
+        } catch (_) {}
+      }
+
+      function buildDesktopConfigPayload(s) {
+        s = s || {};
+        let persona = "";
+        try { persona = getUserPersona(); } catch (_) { persona = String(s.userPersona || ""); }
+        if (!persona) persona = String(s.userPersona || "");
+        return {
+          version: "1.0",
+          timestamp: new Date().toISOString(),
+          userPersona: persona,
+          apiSettings: {
+            endpoint: String(s.apiEndpoint || ""),
+            apiKey: String(s.apiKey || ""),
+            model: String(s.modelName || "")
+          },
+          customDialogues: s.offlineCorpus || emptyOfflineCorpus(),
+          offlineCorpus: s.offlineCorpus || emptyOfflineCorpus(),
+          offlineLines: s.offlineLines || [],
+          offlineSceneLines: s.offlineSceneLines || {},
+          tokenSavingMode: !!s.preferOfflineCorpus,
+          petSettings: {
+            appearanceMode: s.appearanceMode || "classic",
+            subjectScale: s.subjectScale == null ? 1 : s.subjectScale,
+            voiceVolume: s.voiceVolume == null ? 80 : s.voiceVolume,
+            voiceMuted: !!s.voiceMuted,
+            bubbleStaySec: s.bubbleStaySec == null ? 5 : s.bubbleStaySec,
+            locale: s.locale || "zh"
+          }
+        };
+      }
+
+      function scheduleDesktopConfigSync(s) {
+        if (!window.bridge || typeof window.bridge.savePetConfig !== "function") return;
+        clearTimeout(desktopConfigTimer);
+        const snap = s;
+        desktopConfigTimer = setTimeout(function () {
+          try {
+            window.bridge.savePetConfig(JSON.stringify(buildDesktopConfigPayload(snap)));
+          } catch (_) {}
+        }, 180);
+      }
+
+      function hydrateFromDesktopConfig() {
+        try {
+          const bridge = window.bridge;
+          if (!bridge || typeof bridge.loadPetConfig !== "function") return;
+          const raw = String(bridge.loadPetConfig() || "");
+          if (!raw.trim()) {
+            scheduleDesktopConfigSync(store);
+            return;
+          }
+          const cfg = JSON.parse(raw);
+          if (!cfg || typeof cfg !== "object") return;
+          const patch = {};
+          const localPersona = readUserPersonaMirror();
+          const cfgPersona = cfg.userPersona != null ? String(cfg.userPersona) : "";
+          if ((localPersona == null || localPersona === "") && cfgPersona) {
+            writeUserPersonaMirror(cfgPersona);
+            patch.userPersona = cfgPersona;
+          }
+          const localCorpus = getOfflineCorpus(store);
+          const localCount = OFFLINE_CATEGORY_KEYS.reduce(function (n, k) {
+            return n + ((localCorpus[k] || []).length);
+          }, 0);
+          const cfgCorpus = cfg.offlineCorpus || cfg.customDialogues;
+          if (!localCount && cfgCorpus && typeof cfgCorpus === "object") {
+            const normalized = normalizeOfflineCorpus(
+              Array.isArray(cfgCorpus) ? { idle_general: cfgCorpus } : cfgCorpus,
+              []
+            );
+            const cfgCount = OFFLINE_CATEGORY_KEYS.reduce(function (n, k) {
+              return n + ((normalized[k] || []).length);
+            }, 0);
+            if (cfgCount) {
+              patch.offlineCorpus = normalized;
+              patch.offlineLines = normalized.idle_general.slice();
+            }
+          }
+          if (cfg.offlineSceneLines && typeof cfg.offlineSceneLines === "object" &&
+              !Object.keys(store.offlineSceneLines || {}).length) {
+            patch.offlineSceneLines = cfg.offlineSceneLines;
+          }
+          if (Object.keys(patch).length) {
+            store = saveStore(patch, { quiet: true });
+            try { fillSettingsForm(); } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      function collectBackupData() {
+        store = loadStore();
+        const persona = getUserPersona() || String(store.userPersona || "");
+        return {
+          version: "1.0",
+          timestamp: new Date().toISOString(),
+          userPersona: persona,
+          apiSettings: {
+            endpoint: String(store.apiEndpoint || ""),
+            apiKey: String(store.apiKey || ""),
+            model: String(store.modelName || "")
+          },
+          customDialogues: getOfflineCorpus(store),
+          offlineSceneLines: store.offlineSceneLines || {},
+          tokenSavingMode: !!store.preferOfflineCorpus,
+          petSettings: {
+            appearanceMode: store.appearanceMode || "classic",
+            subjectScale: store.subjectScale,
+            voiceVolume: store.voiceVolume,
+            voiceMuted: !!store.voiceMuted,
+            bubbleStaySec: store.bubbleStaySec,
+            locale: store.locale || "zh"
+          },
+          settings: store
+        };
+      }
+
+      function exportAllConfig() {
+        const backupData = collectBackupData();
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        a.href = url;
+        a.download = "desktop-pet-backup-" + Date.now() + ".json";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+          try { URL.revokeObjectURL(url); } catch (_) {}
+          try { a.remove(); } catch (_) {}
+        }, 0);
+        showToast("已导出配置");
+      }
+
+      function applyImportedBackup(data) {
+        const base = (data.settings && typeof data.settings === "object" && !Array.isArray(data.settings))
+          ? Object.assign({}, data.settings)
+          : {};
+        if (data.userPersona != null || data.user_persona != null) {
+          base.userPersona = String(data.userPersona != null ? data.userPersona : data.user_persona);
+        }
+        const api = data.apiSettings && typeof data.apiSettings === "object" ? data.apiSettings : {};
+        if (api.endpoint != null) base.apiEndpoint = String(api.endpoint);
+        if (api.apiKey != null) base.apiKey = String(api.apiKey);
+        if (api.model != null) base.modelName = String(api.model);
+        if (data.tokenSavingMode != null) base.preferOfflineCorpus = !!data.tokenSavingMode;
+        if (data.customDialogues != null) {
+          const corpus = Array.isArray(data.customDialogues)
+            ? { idle_general: data.customDialogues }
+            : data.customDialogues;
+          base.offlineCorpus = normalizeOfflineCorpus(corpus, []);
+          base.offlineLines = (base.offlineCorpus.idle_general || []).slice();
+        }
+        if (data.offlineSceneLines && typeof data.offlineSceneLines === "object") {
+          base.offlineSceneLines = data.offlineSceneLines;
+        }
+        const pet = data.petSettings && typeof data.petSettings === "object" ? data.petSettings : {};
+        if (pet.appearanceMode) base.appearanceMode = pet.appearanceMode;
+        if (pet.subjectScale != null) base.subjectScale = pet.subjectScale;
+        if (pet.voiceVolume != null) base.voiceVolume = pet.voiceVolume;
+        if (pet.voiceMuted != null) base.voiceMuted = !!pet.voiceMuted;
+        if (pet.bubbleStaySec != null) base.bubbleStaySec = pet.bubbleStaySec;
+        if (pet.locale) base.locale = pet.locale;
+        if (base.userPersona != null) writeUserPersonaMirror(base.userPersona);
+        delete base.systemPrompt;
+        store = saveStore(base);
+        fillSettingsForm();
+      }
+
+      function importAllConfigFromText(text) {
+        let data;
+        try {
+          data = JSON.parse(String(text || ""));
+        } catch (_) {
+          showToast("配置文件不是合法 JSON", 2200);
+          return;
+        }
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          showToast("配置格式不正确", 2200);
+          return;
+        }
+        const known = data.userPersona != null || data.user_persona != null || data.apiSettings ||
+          data.customDialogues || data.tokenSavingMode != null || data.petSettings || data.settings;
+        if (!known) {
+          showToast("未识别的配置文件", 2200);
+          return;
+        }
+        try {
+          applyImportedBackup(data);
+          showToast("配置导入成功", 2200);
+        } catch (err) {
+          console.warn(err);
+          showToast("导入失败", 2200);
+        }
+      }
+
+      function clearAllCustomDialogues() {
+        const empty = emptyOfflineCorpus();
+        store.offlineLines = [];
+        store.offlineCorpus = empty;
+        store.offlineSceneLines = {};
+        store = saveStore({
+          offlineLines: [],
+          offlineSceneLines: {},
+          offlineCorpus: empty
+        });
+        try {
+          Object.keys(offlineRecentByCat).forEach(function (k) { delete offlineRecentByCat[k]; });
+        } catch (_) {}
+        renderOfflineList();
+      }
+
       function loadStore() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
@@ -7914,6 +8199,9 @@
           );
           if (merged.stPromptEntries.length) merged.tavernSystemPrompt = "";
           merged.userPersona = String(merged.userPersona || "");
+          const mirroredPersona = readUserPersonaMirror();
+          if (mirroredPersona != null) merged.userPersona = mirroredPersona;
+          else if (merged.userPersona) writeUserPersonaMirror(merged.userPersona);
           merged.storyString = String(merged.storyString || "");
           merged.chatTemperature = Math.max(0, Math.min(1.5, Number(merged.chatTemperature)));
           if (isNaN(merged.chatTemperature)) merged.chatTemperature = 0.85;
@@ -7956,6 +8244,15 @@
           merged.offlineCorpus = normalizeOfflineCorpus(merged.offlineCorpus, merged.offlineLines);
           merged.offlineLines = merged.offlineCorpus.idle_general.slice();
           merged.offlineSceneLines = normalizeSceneLinesMap(merged.offlineSceneLines);
+          (function applyDialogueMirror() {
+            const dlg = readCustomDialoguesMirror();
+            if (!dlg) return;
+            merged.offlineCorpus = normalizeOfflineCorpus(dlg.offlineCorpus, dlg.offlineLines);
+            merged.offlineLines = merged.offlineCorpus.idle_general.slice();
+            if (dlg.offlineSceneLines && typeof dlg.offlineSceneLines === "object") {
+              merged.offlineSceneLines = normalizeSceneLinesMap(dlg.offlineSceneLines);
+            }
+          })();
           /* 兼容旧版单一 systemPrompt */
           if ((!parsed.persona && !parsed.rules && !parsed.negative) && parsed.systemPrompt) {
             merged.persona = String(parsed.systemPrompt);
@@ -8005,8 +8302,17 @@
         next.offlineCorpus = normalizeOfflineCorpus(next.offlineCorpus, next.offlineLines);
         next.offlineLines = next.offlineCorpus.idle_general.slice();
         next.offlineSceneLines = normalizeSceneLinesMap(next.offlineSceneLines);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch (err) {
+          console.warn("[桌宠] 主配置写入失败", err);
+        }
+        writeCustomDialoguesMirror(next.offlineCorpus, next.offlineSceneLines, next.offlineLines);
+        if (Object.prototype.hasOwnProperty.call(next, "userPersona")) {
+          writeUserPersonaMirror(next.userPersona);
+        }
         window.__petSettings = next;
+        scheduleDesktopConfigSync(next);
         if (!opts.quiet) {
           syncAllToBridge(next);
           if (IS_SETTINGS_WINDOW && window.bridge && typeof window.bridge.notifySettingsChanged === "function") {
@@ -9342,7 +9648,7 @@
         if (charBlock) sys += "\n\n" + charBlock;
         const story = (s.storyString || "").trim();
         if (story) sys += "\n\n[Story / Context]\n" + story;
-        const userPersona = (s.userPersona || "").trim();
+        const userPersona = String(getUserPersona() || (s && s.userPersona) || "").trim();
         if (userPersona) {
           sys += "\n\n[用户人设 User Persona]\n" + userPersona;
         }
@@ -12019,6 +12325,7 @@
       }
 
       function fillSettingsForm() {
+        settingsHydrating = true;
         store = loadStore();
         fields.llm.checked = !!store.llmEnabled;
         if (fields.offlineFirst) fields.offlineFirst.checked = !!store.preferOfflineCorpus;
@@ -12063,7 +12370,7 @@
           rules: store.rules || DEFAULT_RULES,
           negative: store.negative || DEFAULT_NEGATIVE
         });
-        if (fields.userPersona) fields.userPersona.value = store.userPersona || "";
+        if (fields.userPersona) fields.userPersona.value = getUserPersona() || store.userPersona || "";
         if (fields.storyString) fields.storyString.value = store.storyString || "";
         if (fields.chatTemp) {
           fields.chatTemp.value = String(store.chatTemperature == null ? 0.85 : store.chatTemperature);
@@ -12115,6 +12422,7 @@
         renderMemoryPanel();
         applyI18nDom();
         renderMemoList();
+        settingsHydrating = false;
       }
 
       function getSelectedGender() {
@@ -12124,6 +12432,7 @@
       }
 
       function persistFromForm(opts) {
+        if (settingsHydrating) return store;
         opts = opts || {};
         const prevMode = store.appearanceMode;
         const prevGif = JSON.stringify(store.gifActions || {});
@@ -12426,8 +12735,8 @@
                   '<div class="fav-item"><span>' +
                   escapeHtml(t) +
                   '</span><button type="button" class="btn-tts" title="试听这句" aria-label="试听">🔊</button>' +
-                  '<button type="button" class="btn-del" data-offline-i="' +
-                  i +
+                  '<button type="button" class="btn-del" data-offline-i="' + i +
+                  '" data-offline-text="' + encodeURIComponent(t) +
                   '">删除</button></div>'
                 );
               })
@@ -12645,13 +12954,7 @@
             okText: "清空"
           });
           if (!ok) return;
-          store = saveStore({
-            offlineLines: [],
-            offlineSceneLines: {},
-            offlineCorpus: emptyOfflineCorpus()
-          });
-          Object.keys(offlineRecentByCat).forEach(function (k) { delete offlineRecentByCat[k]; });
-          renderOfflineList();
+          clearAllCustomDialogues();
           showToast("已清空离线台词库");
         });
       }
@@ -12684,23 +12987,35 @@
         return true;
       }
 
-      function removeOfflineLineAtActiveTab(index) {
+      function removeOfflineLineAtActiveTab(index, text) {
         store = loadStore();
+        const wanted = text == null ? null : String(text);
         if (activeOfflineTab === "app_activity" && activeOfflineSceneTag) {
           const scenes = Object.assign({}, store.offlineSceneLines || {});
           const next = (scenes[activeOfflineSceneTag] || []).slice();
-          if (index < 0 || index >= next.length) return;
-          next.splice(index, 1);
+          let at = index;
+          if (!(at >= 0 && at < next.length && (wanted == null || next[at] === wanted))) {
+            at = wanted == null ? -1 : next.indexOf(wanted);
+          }
+          if (at < 0 || at >= next.length) return;
+          next.splice(at, 1);
           if (next.length) scenes[activeOfflineSceneTag] = next;
           else delete scenes[activeOfflineSceneTag];
+          store.offlineSceneLines = scenes;
           store = saveStore({ offlineSceneLines: scenes });
         } else {
           const corpus = getOfflineCorpus(store);
           const key = OFFLINE_CATEGORY_KEYS.indexOf(activeOfflineTab) >= 0 ? activeOfflineTab : "idle_general";
           const next = (corpus[key] || []).slice();
-          if (index < 0 || index >= next.length) return;
-          next.splice(index, 1);
+          let at = index;
+          if (!(at >= 0 && at < next.length && (wanted == null || next[at] === wanted))) {
+            at = wanted == null ? -1 : next.indexOf(wanted);
+          }
+          if (at < 0 || at >= next.length) return;
+          next.splice(at, 1);
           corpus[key] = next;
+          store.offlineCorpus = corpus;
+          store.offlineLines = corpus.idle_general.slice();
           store = saveStore({
             offlineCorpus: corpus,
             offlineLines: corpus.idle_general.slice()
@@ -12751,10 +13066,13 @@
           }
           const btn = e.target.closest("button.btn-del[data-offline-i], button[data-offline-i]");
           if (!btn || btn.classList.contains("btn-tts")) return;
+          e.preventDefault();
           e.stopPropagation();
           const i = parseInt(btn.getAttribute("data-offline-i"), 10);
-          if (isNaN(i)) return;
-          removeOfflineLineAtActiveTab(i);
+          let lineText = "";
+          try { lineText = decodeURIComponent(btn.getAttribute("data-offline-text") || ""); } catch (_) {}
+          if (isNaN(i) && !lineText) return;
+          removeOfflineLineAtActiveTab(isNaN(i) ? -1 : i, lineText || null);
         });
       }
 
@@ -12776,8 +13094,39 @@
       const btnSaveAll = document.getElementById("btn-save-all");
       if (btnSaveAll) {
         btnSaveAll.addEventListener("click", function () {
+          if (fields.userPersona) writeUserPersonaMirror(fields.userPersona.value);
           persistFromForm();
           showToast("已成功保存所有配置", 2000);
+        });
+      }
+      const btnExportConfig = document.getElementById("btn-export-config");
+      const btnImportConfig = document.getElementById("btn-import-config");
+      const backupFileInput = document.getElementById("cfg-backup-file");
+      if (btnExportConfig) {
+        btnExportConfig.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          try { exportAllConfig(); } catch (err) {
+            console.warn(err);
+            showToast("导出失败", 2000);
+          }
+        });
+      }
+      if (btnImportConfig && backupFileInput) {
+        btnImportConfig.addEventListener("click", function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          backupFileInput.value = "";
+          backupFileInput.click();
+        });
+        backupFileInput.addEventListener("change", function () {
+          const file = backupFileInput.files && backupFileInput.files[0];
+          backupFileInput.value = "";
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = function () { importAllConfigFromText(reader.result); };
+          reader.onerror = function () { showToast("读取备份文件失败", 2000); };
+          reader.readAsText(file);
         });
       }
 
@@ -16416,6 +16765,13 @@
         if (!el) return;
         el.addEventListener("change", persistFromForm);
         el.addEventListener("input", persistFromForm);
+        if (el.id === "cfg-user-persona") {
+          el.addEventListener("blur", function () {
+            if (settingsHydrating) return;
+            writeUserPersonaMirror(el.value);
+            persistFromForm();
+          });
+        }
       });
 
       [fields.genderFemale, fields.genderMale, fields.genderPrivate].forEach(function (el) {
@@ -17195,6 +17551,7 @@
       }
 
       window.__onPetBridgeReady = function () {
+        try { hydrateFromDesktopConfig(); } catch (_) {}
         syncAllToBridge(store);
         reportHitRect();
         try {
